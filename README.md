@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # FastAPI Authentication and Products API
 
 This is a FastAPI-based project that implements a secure REST API with user authentication (using JWT tokens) and product management functionality. The application connects to a PostgreSQL database to store user and product data.
@@ -175,3 +176,6 @@ This is a FastAPI-based project that implements a secure REST API with user auth
 ## Contributing
 
 Feel free to submit issues or pull requests. Suggestions for improvements are welcome!
+=======
+
+>>>>>>> 65af177d370b5b738f2884100adabc913c48d2cb

@@ -80,6 +80,7 @@ class Product(BaseModel):
     price: float
     owner_username: str
 
+# Определяет структуру данных для регистрации (имя и пароль)
 class UserCreate(BaseModel):
     username: str
     password: str
@@ -88,6 +89,7 @@ class UserCreate(BaseModel):
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
+# Хэширует пароль с помощью bcrypt для безопасного хранения.
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
@@ -135,8 +137,36 @@ def create_tokens(data: dict, expires_delta: Optional[timedelta] = None):
     }
 
 # Эндпоинт для регистрации
-@app.post('/register', response_model==Token)
+# Принимает данные пользователя, проверяет, не существует ли такой username, хэширует пароль и сохраняет в users. 
+# Затем выдаёт токены.
+@app.post('/register', response_model=Token)
+# user: UserCreate — объект, созданный из JSON-запроса (например, {"username": "alice", "password": "password123"}).
+async def register(user: UserCreate):
+    conn = db_pool.getconn()
+    try:
+        with conn.cursor() as cur:
+            # Проверка сущестует ли пользователь
+            cur.execute('SELECT username FROM users WHERE username = %s', (user.username,))
+            # Возвращает первую строку, если пользователь существует. Если да, выбрасывается HTTPException с кодом 400.
+            if cur.fetchone(): 
+                raise HTTPException(status_code=400, detail='Пользователь уже сущестует')
+            
+            # Хэшируем пароль и сохраняем пользователя
+            hashed_password = get_password_hash(user.password)
+            cur.execute(
+                'INSERT INTO users (username, hashed_password) VALUES (%s, %s)',
+                (user.username, hashed_password)
+            )
+            conn.commit()
 
+            # Генерируем токены
+            return create_tokens(data={'sub': user.username})
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f'Ошибка регистрации {str(e)}')
+    finally:
+        # Возвращает соединение в пул.
+        db_pool.putconn(conn)
 
 # Эндпоинт для получения токена
 @app.post("/token", response_model=Token)
