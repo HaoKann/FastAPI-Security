@@ -1,6 +1,7 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from typing import Optional, List
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
+from fastapi.background import BackgroundTasks # добавляет поддержку фоновых задач.
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -308,3 +309,40 @@ async def create_product(name: str, price: float, current_user: str = Depends(ge
         raise HTTPException(status_code=500, detail=f"Ошибка создания продукта: {str(e)}")
     finally:
         db_pool.putconn(conn)
+
+
+
+
+# 1. Фоновые задачи (BackgroundTasks) — для тяжёлых вычислений
+# Функция для симуляции тяжёлых вычислений. Это пример задачи, которую можно выполнить в фоне.
+def compute_factorial(n: int, username: str):
+    time.sleep(5) # Симуляция тяжёлого вычисления (5 секунд)
+    result = 1
+    for i in range(1, n + 1):
+        result *= i
+    conn = db_pool.getconn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                'INSERT INTO calculations (username, task, result) VALUES (%s, %s, %s)',
+                (username, f"factorial of {n}", result)
+            )
+            conn.commit()
+    except Exception as e:
+        conn.rollback()
+    finally:
+        db_pool.putconn(conn)
+
+
+# Эндпоинт для запуска фоновых задач
+# Принимает число n, запускает вычисление факториала в фоне и сразу возвращает ответ.
+@app.post('/compute/')
+# current_user: str = Depends(get_current_user) — проверяет авторизацию
+# background_tasks: BackgroundTasks = None — объект для фоновых задач.
+async def start_computation(n: int, current_user: str = Depends(get_current_user), background_tasks: BackgroundTasks = None):
+    if n <= 0:
+        raise HTTPException(status_code=400, detail='Число должно быть положительным')
+    if background_tasks:
+        # добавляет задачу compute_factorial с аргументами n и current_user.
+        background_tasks.add_task(compute_factorial, n, current_user)
+    return {'message': f'Вычисления факториала {n} начато в фоне. Результат будет сохранен'}
