@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta, time
 from typing import Optional, List
+# WebSocket, WebSocketDisconnect — добавляет поддержку WebSocket-протокола и обработку разрыва соединения.
 from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
-from fastapi.background import BackgroundTasks # добавляет поддержку фоновых задач.
+ # BackgroundTasks добавляет поддержку фоновых задач.
+from fastapi.background import BackgroundTasks 
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -290,33 +292,12 @@ async def get_products(current_user: str = Depends(get_current_user)):
         db_pool.putconn(conn)  # Возвращает соединение в пул, даже если произошла ошибка.
 
 
-# Защищённый эндпоинт для создания нового продукта, доступный только авторизованным пользователям.
-@app.post('/products/', response_model=Product)
-async def create_product(name: str, price: float, current_user: str = Depends(get_current_user)):
-    conn = db_pool.getconn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                # RETURNING id, name, price, owner_username возвращает только что вставленные данные.
-                "INSERT INTO products (name, price, owner_username) VALUES (%s, %s, %s) RETURNING id, name, price, owner_username",
-                (name, price, current_user)
-            )
-            product = cur.fetchone() # Получает первую (и единственную) строку результата вставки.
-            conn.commit()
-            return {"id": product[0], "name": product[1], "price": float(product[2]), "owner_username": product[3]}
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Ошибка создания продукта: {str(e)}")
-    finally:
-        db_pool.putconn(conn)
 
-
-
-
+# BackgroundTasks позволяет запускать тяжёлые задачи (как факториал) в фоне, не блокируя клиента.
 # 1. Фоновые задачи (BackgroundTasks) — для тяжёлых вычислений
 # Функция для симуляции тяжёлых вычислений. Это пример задачи, которую можно выполнить в фоне.
 def compute_factorial(n: int, username: str):
-    time.sleep(5) # Симуляция тяжёлого вычисления (5 секунд)
+    datetime.sleep(5) # Симуляция тяжёлого вычисления (5 секунд)
     result = 1
     for i in range(1, n + 1):
         result *= i
@@ -339,10 +320,106 @@ def compute_factorial(n: int, username: str):
 @app.post('/compute/')
 # current_user: str = Depends(get_current_user) — проверяет авторизацию
 # background_tasks: BackgroundTasks = None — объект для фоновых задач.
+# BackgroundTasks — это специальный класс из FastAPI, который позволяет запускать задачи асинхронно после отправки HTTP-ответа.
+# = None означает, что этот параметр необязательный. Если клиент не передаёт его явно (что обычно происходит), он будет None по умолчанию.
 async def start_computation(n: int, current_user: str = Depends(get_current_user), background_tasks: BackgroundTasks = None):
     if n <= 0:
         raise HTTPException(status_code=400, detail='Число должно быть положительным')
+    # проверяет, существует ли объект BackgroundTasks. Если он есть (например, передан в эндпоинт), задача добавляется в очередь фоновых задач. 
+    # Если None (например, если ты вызовешь функцию напрямую без контекста FastAPI), задача не запустится.
     if background_tasks:
-        # добавляет задачу compute_factorial с аргументами n и current_user.
+        # add_task — метод, который добавляет функцию compute_factorial в очередь фоновых задач с аргументами n (число) 
+        # и current_user (имя пользователя).
         background_tasks.add_task(compute_factorial, n, current_user)
     return {'message': f'Вычисления факториала {n} начато в фоне. Результат будет сохранен'}
+
+
+# Защищённый эндпоинт для создания нового продукта, доступный только авторизованным пользователям.
+@app.post('/products/', response_model=Product)
+async def create_product(name: str, price: float, current_user: str = Depends(get_current_user)):
+    conn = db_pool.getconn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                # RETURNING id, name, price, owner_username возвращает только что вставленные данные.
+                "INSERT INTO products (name, price, owner_username) VALUES (%s, %s, %s) RETURNING id, name, price, owner_username",
+                (name, price, current_user)
+            )
+            product = cur.fetchone() # Получает первую (и единственную) строку результата вставки.
+            conn.commit()
+            new_product = {"id": product[0], "name": product[1], "price": float(product[2]), "owner_username": product[3]}
+            if background_tasks:
+                background_tasks.add_task(manager.broadcast, f"New product added: {new_product}")
+            return new_product
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Ошибка создания продукта: {str(e)}")
+    finally:
+        db_pool.putconn(conn)
+
+
+
+# 2. WebSocket подключения
+# Зачем: Позволяет организовать чат и уведомления.
+class ConnectionManager:  # Управляет активными WebSocket-соединениями, связывая их с username.
+    def __init__(self):
+        self.active_connections: List[WebSocket] = [] # Список всех подключений для рассылки.
+        self.user_connections: dict[str, WebSocket] = {} # Словарь, где ключ — username, значение — WebSocket для индивидуальных сообщений.
+    
+    # connect: Принимает соединение и username, добавляет их в списки
+    async def connect(self, websocket: WebSocket, username: str): 
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        self.user_connections[username] = websocket
+
+    # disconnect: Удаляет соединение при разрыве.
+    def disconnect(self, websocket: WebSocket):
+        for username, conn in list(self.user_connections.items()):
+            if conn == websocket:
+                del self.user_connections[username]
+                break
+        self.active_connections.remove(websocket)
+
+    # broadcast: Отправляет сообщение всем.
+    async def broadcast(self, message: int):
+        for connection in self.active_connections:
+            await connection.send_text(message)
+
+    # send_to_user: Отправляет сообщение конкретному пользователю.
+    async def send_to_user(self, username: str, message: str):
+        if username in self.user_connections:
+            await self.user_connections[username].send_text(message)
+
+manager = ConnectionManager()
+
+# Устанавливает WebSocket-соединение, проверяет токен и обрабатывает сообщения.
+# Зачем: Создаёт чат и уведомления в реальном времени.
+@app.websocket('/ws/products')
+# token: str = Depends(oauth2_scheme) — требует авторизацию через токен.
+async def websocket_endpoint(websocket: WebSocket, token: str = Depends(oauth2_scheme)):
+    try:
+        # jwt.decode: Проверяет токен и извлекает username.
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get('sub')
+        if not username:
+            # Закрывает соединение с ошибкой, если токен неверный.
+            await websocket.close(code=1008, reason='Invalid token')
+            return
+        # Добавляет пользователя.
+        await manager.connect(websocket, username)
+        # Приветствует пользователя.
+        await websocket.send_text(f'Connected as {username}')
+        # Бесконечный цикл для получения сообщений.
+        while True:
+            # Ждёт текстовое сообщение.
+            data = await websocket.receive_text()
+            # Рассылает сообщение всем.
+            await manager.broadcast(f'{username} says: {data}')
+    # Обрабатывает разрыв.
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+    except JWTError:
+        await websocket.close(code=1008, reason='Invalid token')
+
+
+
