@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta, time
+from time import sleep
 from typing import Optional, List
 # WebSocket, WebSocketDisconnect — добавляет поддержку WebSocket-протокола и обработку разрыва соединения.
-from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query
  # BackgroundTasks добавляет поддержку фоновых задач.
 from fastapi.background import BackgroundTasks 
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -66,6 +67,7 @@ def get_user(username: str):
         db_pool.putconn(conn)
 
 # Хэширование паролей 
+# Утилиты для аутентификации 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
@@ -189,50 +191,32 @@ async def login_for_token(form_data: OAuth2PasswordRequestForm = Depends()):
 
 # Эндпоинт для обновления токенов
 @app.post("/refresh", response_model=Token)
-async def refresh_token(refresh_token: str):
+async def refresh_token(token: str):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Невалидный refresh-токен",
+    )
     try:
-        payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         if payload.get("type") != "refresh":
-            raise HTTPException(status_code=400, detail="Неверный тип токена")
+            raise credentials_exception
         
         username = payload.get("sub")
-        if not username:
-            raise HTTPException(status_code=400, detail="Невалидный токен")
+        if username is None:
+            raise credentials_exception
         
-        # Проверка наличия refresh-токена в базе
-        conn = db_pool.getconn()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    # Выполняет запрос для поиска refresh-токена в базе, проверяя, что он ещё не истёк
-                    "SELECT refresh_token FROM refresh_tokens WHERE username = %s AND expiry > %s",
-                    (username, datetime.utcnow())
-                )
-                # Извлекает первую строку результата (если токен найден).
-                stored_refresh_token = cur.fetchone()
-                if not stored_refresh_token or stored_refresh_token[0] != refresh_token:
-                    raise HTTPException(status_code=401, detail="Невалидный refresh-токен")
-                
-                # Удаляет использованный refresh-токен из базы (одноразовый токен).
-                cur.execute(
-                    "DELETE FROM refresh_tokens WHERE username = %s AND refresh_token = %s",
-                    (username, refresh_token)
-                )
-                conn.commit()
-                
-                return create_tokens(data={"sub": username})
+        # Проверяем, что пользователь все еще существует в системе
+        if get_user(username) is None:
+            raise credentials_exception
+        
+        # Если все хорошо, генерируем новую пару токенов
+        return create_tokens(data={"sub": username})
+    except JWTError:
         # Exception — это общий класс всех исключений в Python. 
         # Указывая except Exception, ты ловишь любые ошибки, которые могут возникнуть в блоке try
         # as e присваивает пойманное исключение переменной e, 
         # чтобы ты мог использовать информацию об ошибке (например, текст ошибки).
-        except Exception as e:
-            conn.rollback()
-            raise HTTPException(status_code=500, detail=f"Ошибка проверки refresh-токена: {str(e)}")
-        finally:
-            db_pool.putconn(conn)
-
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Невалидный или просроченный токен")
+        raise credentials_exception
     
 
 
@@ -297,7 +281,7 @@ async def get_products(current_user: str = Depends(get_current_user)):
 # 1. Фоновые задачи (BackgroundTasks) — для тяжёлых вычислений
 # Функция для симуляции тяжёлых вычислений. Это пример задачи, которую можно выполнить в фоне.
 def compute_factorial(n: int, username: str):
-    datetime.sleep(5) # Симуляция тяжёлого вычисления (5 секунд)
+    time.sleep(5) # Симуляция тяжёлого вычисления (5 секунд)
     result = 1
     for i in range(1, n + 1):
         result *= i
@@ -335,8 +319,8 @@ async def start_computation(n: int, current_user: str = Depends(get_current_user
 
 
 # Защищённый эндпоинт для создания нового продукта, доступный только авторизованным пользователям.
-@app.post('/products/', response_model=Product)
-async def create_product(name: str, price: float, current_user: str = Depends(get_current_user)):
+@app.post('/products/', response_model=Product, tags=['Products'])
+async def create_product(name: str, price: float, background_tasks: BackgroundTasks, current_user: str = Depends(get_current_user)):
     conn = db_pool.getconn()
     try:
         with conn.cursor() as cur:
@@ -345,11 +329,13 @@ async def create_product(name: str, price: float, current_user: str = Depends(ge
                 "INSERT INTO products (name, price, owner_username) VALUES (%s, %s, %s) RETURNING id, name, price, owner_username",
                 (name, price, current_user)
             )
-            product = cur.fetchone() # Получает первую (и единственную) строку результата вставки.
+            product_id = cur.fetchone()[0] # Получает первую (и единственную) строку результата вставки.
             conn.commit()
-            new_product = {"id": product[0], "name": product[1], "price": float(product[2]), "owner_username": product[3]}
-            if background_tasks:
-                background_tasks.add_task(manager.broadcast, f"New product added: {new_product}")
+
+            # ИСПРАВЛЕНО: Возвращаем Pydantic модель и отправляем JSON в broadcast
+            new_product = Product(id=product_id, name=name, price=price, owner_username=current_user)
+            background_tasks.add_task(manager.broadcast, f"Новый продукт: {new_product.json()}")
+
             return new_product
     except Exception as e:
         conn.rollback()
@@ -359,67 +345,75 @@ async def create_product(name: str, price: float, current_user: str = Depends(ge
 
 
 
+
 # 2. WebSocket подключения
 # Зачем: Позволяет организовать чат и уведомления.
-class ConnectionManager:  # Управляет активными WebSocket-соединениями, связывая их с username.
+class ConnectionManager:  # Управляет активными WebSocket-соединениями.
     def __init__(self):
-        self.active_connections: List[WebSocket] = [] # Список всех подключений для рассылки.
-        self.user_connections: dict[str, WebSocket] = {} # Словарь, где ключ — username, значение — WebSocket для индивидуальных сообщений.
-    
-    # connect: Принимает соединение и username, добавляет их в списки
-    async def connect(self, websocket: WebSocket, username: str): 
+        self.active_connections: list[WebSocket] = [] # Список всех подключений для рассылки.
+
+    # connect: Принимает соединение, добавляет его в список
+    async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
-        self.user_connections[username] = websocket
 
     # disconnect: Удаляет соединение при разрыве.
     def disconnect(self, websocket: WebSocket):
-        for username, conn in list(self.user_connections.items()):
-            if conn == websocket:
-                del self.user_connections[username]
-                break
-        self.active_connections.remove(websocket)
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
 
     # broadcast: Отправляет сообщение всем.
-    async def broadcast(self, message: int):
+    async def broadcast(self, message: str):
         for connection in self.active_connections:
             await connection.send_text(message)
 
-    # send_to_user: Отправляет сообщение конкретному пользователю.
-    async def send_to_user(self, username: str, message: str):
-        if username in self.user_connections:
-            await self.user_connections[username].send_text(message)
 
 manager = ConnectionManager()
 
+
 # Устанавливает WebSocket-соединение, проверяет токен и обрабатывает сообщения.
 # Зачем: Создаёт чат и уведомления в реальном времени.
-@app.websocket('/ws/products')
-# token: str = Depends(oauth2_scheme) — требует авторизацию через токен.
-async def websocket_endpoint(websocket: WebSocket, token: str = Depends(oauth2_scheme)):
+# ИСПРАВЛЕНО: Полностью переработанный эндпоинт для надежной работы
+@app.websocket("/ws/products")
+async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
+    username: Optional[str] = None
     try:
-        # jwt.decode: Проверяет токен и извлекает username.
+        # Шаг 1: Декодируем токен
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username = payload.get('sub')
-        if not username:
-            # Закрывает соединение с ошибкой, если токен неверный.
-            await websocket.close(code=1008, reason='Invalid token')
+        
+        # Шаг 2: Проверяем тип токена (должен быть access)
+        if payload.get("type") != "access":
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token type")
             return
-        # Добавляет пользователя.
-        await manager.connect(websocket, username)
-        # Приветствует пользователя.
-        await websocket.send_text(f'Connected as {username}')
-        # Бесконечный цикл для получения сообщений.
-        while True:
-            # Ждёт текстовое сообщение.
-            data = await websocket.receive_text()
-            # Рассылает сообщение всем.
-            await manager.broadcast(f'{username} says: {data}')
-    # Обрабатывает разрыв.
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
+
+        username = payload.get("sub")
+        # Шаг 3: Проверяем, что пользователь существует
+        if username is None or get_user(username) is None:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="User not found")
+            return
+
     except JWTError:
-        await websocket.close(code=1008, reason='Invalid token')
+        # Если токен невалидный или просрочен
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token")
+        return
+
+    # Если все проверки пройдены, подключаем пользователя
+    await manager.connect(websocket)
+    await manager.broadcast(f"Клиент '{username}' присоединился к чату.")
+    try:
+        # Ожидаем сообщения
+        while True:
+            data = await websocket.receive_text()
+            await manager.broadcast(f"{username}: {data}")
+    except WebSocketDisconnect:
+        # Если клиент отключается
+        manager.disconnect(websocket)
+        await manager.broadcast(f"Клиент '{username}' покинул чат.")
+
+
+
+
+
 
 
 
