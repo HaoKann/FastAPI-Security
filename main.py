@@ -12,6 +12,9 @@ from pydantic import BaseModel
 import os
 from psycopg2 import pool
 from dotenv import load_dotenv
+import logging
+from tenacity import retry, stop_after_attempt, wait_fixed
+import asyncio
 
 load_dotenv()
 DB_HOST = os.getenv('DB_HOST')
@@ -20,6 +23,12 @@ DB_NAME = os.getenv('DB_NAME')
 DB_USER = os.getenv('DB_USER')
 DB_PASSWORD = os.getenv('DB_PASSWORD')
 
+
+# Настройки логирования
+# Базовая конфигурация логирования
+logging.basicConfig(level=logging.INFO)
+# Создание логгера, привязанного к текущему модулю
+logger = logging.getLogger(__name__)
 
 # Создание пула подключений
 # Загружает зависимости и настраивает подключение к PostgreSQL через пул соединений (ThreadedConnectionPool). 
@@ -42,6 +51,8 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 7 
 
 app = FastAPI()
+
+
 
 # Функция для получения пользователя
 def get_user(username: str):
@@ -280,33 +291,40 @@ async def get_products(current_user: str = Depends(get_current_user)):
 # BackgroundTasks позволяет запускать тяжёлые задачи (как факториал) в фоне, не блокируя клиента.
 # 1. Фоновые задачи (BackgroundTasks) — для тяжёлых вычислений
 # Функция для симуляции тяжёлых вычислений. Это пример задачи, которую можно выполнить в фоне.
-def compute_factorial(n: int, username: str):
-    time.sleep(5) # Симуляция тяжёлого вычисления (5 секунд)
-    result = 1
-    for i in range(1, n + 1):
-        result *= i
-    conn = db_pool.getconn()
+
+# Функция с повторными попытками
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(2)) # 3 попытки с задержкой 2 секунды
+async def compute_factorial_async(n: int, username: str):
     try:
-        with conn.cursor() as cur:
-            cur.execute(
+        logger.info(f"Начало вычисление факториала {n} для {username}")
+        await asyncio.sleep(5) # Асинхронная задержка
+        result = 1
+        for i in range(1, n + 1):
+            result *= i
+        conn = db_pool.getconn()
+        async with await conn.cursor() as cur: # Асинхронный курсор (требуется psycopg3)
+            await cur.execute(
                 'INSERT INTO calculations (username, task, result) VALUES (%s, %s, %s)',
                 (username, f"factorial of {n}", result)
             )
-            conn.commit()
+            await conn.commit()
+        logger.info(f"Успешно вычислен факториал {n} = {result}")
     except Exception as e:
-        conn.rollback()
+        logger.error(f"Ошибка при вычислении факториала {n}: {str(e)}")
+        await conn.rollback()
+        raise # Передаём ошибку дальше для retry
     finally:
         db_pool.putconn(conn)
 
 
 # Эндпоинт для запуска фоновых задач
 # Принимает число n, запускает вычисление факториала в фоне и сразу возвращает ответ.
-@app.post('/compute/')
+@app.post('/compute/async')
 # current_user: str = Depends(get_current_user) — проверяет авторизацию
 # background_tasks: BackgroundTasks = None — объект для фоновых задач.
 # BackgroundTasks — это специальный класс из FastAPI, который позволяет запускать задачи асинхронно после отправки HTTP-ответа.
 # = None означает, что этот параметр необязательный. Если клиент не передаёт его явно (что обычно происходит), он будет None по умолчанию.
-async def start_computation(n: int, current_user: str = Depends(get_current_user), background_tasks: BackgroundTasks = None):
+async def start_async_computation(n: int, current_user: str = Depends(get_current_user), background_tasks: BackgroundTasks = None):
     if n <= 0:
         raise HTTPException(status_code=400, detail='Число должно быть положительным')
     # проверяет, существует ли объект BackgroundTasks. Если он есть (например, передан в эндпоинт), задача добавляется в очередь фоновых задач. 
@@ -314,8 +332,8 @@ async def start_computation(n: int, current_user: str = Depends(get_current_user
     if background_tasks:
         # add_task — метод, который добавляет функцию compute_factorial в очередь фоновых задач с аргументами n (число) 
         # и current_user (имя пользователя).
-        background_tasks.add_task(compute_factorial, n, current_user)
-    return {'message': f'Вычисления факториала {n} начато в фоне. Результат будет сохранен'}
+        background_tasks.add_task(compute_factorial_async, n, current_user)
+    return {'message': f'Асинхронные вычисления факториала {n} начато в фоне. Результат будет сохранен (максимум 3 попытки)'}
 
 
 # Защищённый эндпоинт для создания нового продукта, доступный только авторизованным пользователям.
@@ -348,34 +366,46 @@ async def create_product(name: str, price: float, background_tasks: BackgroundTa
 
 # 2. WebSocket подключения
 # Зачем: Позволяет организовать чат и уведомления.
-class ConnectionManager:  # Управляет активными WebSocket-соединениями.
+# ConnectionManager - определяет класс для управления WebSocket-подключениями (например, чат).
+class ConnectionManager:  
+    # Инициализирует объект класса при его создании.
     def __init__(self):
-        self.active_connections: list[WebSocket] = [] # Список всех подключений для рассылки.
+        self.active_connections: list[WebSocket] = [] # Создаёт пустой список для хранения всех активных WebSocket-соединений. 
+        # Тип list[WebSocket] указывает, что список содержит объекты типа WebSocket.
 
     # connect: Принимает соединение, добавляет его в список
+    # Асинхронный метод для подключения нового клиента
     async def connect(self, websocket: WebSocket):
+        # Принимает входящее WebSocket-соединение, устанавливая "рукопожатие" между клиентом и сервером.
         await websocket.accept()
+        # Добавляет новое соединение в список активных
         self.active_connections.append(websocket)
 
     # disconnect: Удаляет соединение при разрыве.
     def disconnect(self, websocket: WebSocket):
+        # Проверяет, есть ли соединение в списке, чтобы избежать ошибки при удалении.
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
 
-    # broadcast: Отправляет сообщение всем.
+    # broadcast: Асинхронный метод для отправки сообщения всем подключённым клиентам.
     async def broadcast(self, message: str):
+        # Проходит по всем активным соединениям.
         for connection in self.active_connections:
+            # Отправляет текстовое сообщение каждому клиенту асинхронно.
             await connection.send_text(message)
 
-
+# ConnectionManager управляет подключениями и рассылает сообщения
 manager = ConnectionManager()
 
 
 # Устанавливает WebSocket-соединение, проверяет токен и обрабатывает сообщения.
 # Зачем: Создаёт чат и уведомления в реальном времени.
-# ИСПРАВЛЕНО: Полностью переработанный эндпоинт для надежной работы
+# @app.websocket(WebSocket-роут) нужен для создания постоянного соединения
 @app.websocket("/ws/products")
+# websocket: WebSocket — объект соединения
+# token: str = Query(...) — токен авторизации, переданный как параметр запроса (обязательный, так как ... указывает на это).
 async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
+    # Объявляет переменную username, которая может быть None (опциональный тип), для хранения имени пользователя
     username: Optional[str] = None
     try:
         # Шаг 1: Декодируем токен
@@ -383,30 +413,39 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
         
         # Шаг 2: Проверяем тип токена (должен быть access)
         if payload.get("type") != "access":
+            # Закрывает соединение с кодом ошибки 1008 (нарушение политики) и сообщением.
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token type")
+            # Прерывает выполнение функции при ошибке
             return
 
         username = payload.get("sub")
-        # Шаг 3: Проверяем, что пользователь существует
+        # Шаг 3: Проверяет, что username существует и пользователь найден в базе. Если нет, закрывает соединение.
         if username is None or get_user(username) is None:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="User not found")
             return
-
+        
+    # Ловит ошибки декодирования токена (например, истёкший или неверный токен).
     except JWTError:
         # Если токен невалидный или просрочен
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token")
         return
 
     # Если все проверки пройдены, подключаем пользователя
+    # Подключает клиента через manager
     await manager.connect(websocket)
+    # Уведомляет всех подключённых клиентов о новом пользователе.
     await manager.broadcast(f"Клиент '{username}' присоединился к чату.")
+    # Начинает блок для обработки сообщений, где может произойти разрыв соединения.
     try:
         # Ожидаем сообщения
         while True:
+            # Асинхронно получает текстовое сообщение от клиента.
             data = await websocket.receive_text()
+            # Рассылает полученное сообщение всем клиентам с именем отправителя.
             await manager.broadcast(f"{username}: {data}")
+    # Ловит событие разрыва соединения.
     except WebSocketDisconnect:
-        # Если клиент отключается
+        # Удаляет клиента из списка активных соединений.
         manager.disconnect(websocket)
         await manager.broadcast(f"Клиент '{username}' покинул чат.")
 
