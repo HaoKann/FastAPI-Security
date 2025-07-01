@@ -1,5 +1,4 @@
-from datetime import datetime, timedelta, time
-from time import sleep
+from datetime import datetime, timedelta
 from typing import Optional, List
 # WebSocket, WebSocketDisconnect — добавляет поддержку WebSocket-протокола и обработку разрыва соединения.
 from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query
@@ -10,10 +9,15 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
 import os
-from psycopg2 import pool
+# AsyncConnectionPool позволяет использовать асинхронные запросы (await), 
+# что улучшает производительность и совместимость с asyncio.
+from psycopg_pool import AsyncConnectionPool
 from dotenv import load_dotenv
+# Модуль Python для записи логов (отладка, ошибки, информация).
 import logging
+# tenacity для настройки повторных попыток задач при сбоях.
 from tenacity import retry, stop_after_attempt, wait_fixed
+# Поддержка асинхронного программирования для не блокирующих операций.
 import asyncio
 
 load_dotenv()
@@ -23,25 +27,20 @@ DB_NAME = os.getenv('DB_NAME')
 DB_USER = os.getenv('DB_USER')
 DB_PASSWORD = os.getenv('DB_PASSWORD')
 
+# Строка подключения для psycopg, объединяет все переменные окружения (DB_HOST, DB_PORT, и т.д.) в одну строку.
+DB_CONNINFO = f"host={DB_HOST} port={DB_PORT} dbname={DB_NAME} user={DB_USER} password={DB_PASSWORD}"
 
 # Настройки логирования
 # Базовая конфигурация логирования
+# Уровень INFO означает, что будут записываться информационные сообщения и выше (например, ошибки).
 logging.basicConfig(level=logging.INFO)
-# Создание логгера, привязанного к текущему модулю
+# Создаёт логгер, привязанный к текущему модулю (__name__ — имя файла, например, main). 
+# Это позволяет разделять логи по модулям.
 logger = logging.getLogger(__name__)
 
-# Создание пула подключений
-# Загружает зависимости и настраивает подключение к PostgreSQL через пул соединений (ThreadedConnectionPool). 
-# Это позволяет эффективно управлять соединениями с базой.
-db_pool = pool.ThreadedConnectionPool(
-    1, # минимальное количество подключений
-    20, # максимальное количество подключений
-    host=DB_HOST,
-    port=DB_PORT,
-    database=DB_NAME,
-    user=DB_USER,
-    password=DB_PASSWORD
-)
+
+# Создаёт пул асинхронных соединений с базой. min_size=1 — минимальное число соединений, max_size=20 — максимальное.
+db_pool = AsyncConnectionPool(conninfo=DB_CONNINFO, min_size=1, max_size=20)
 
 
 # Настройка
@@ -55,18 +54,16 @@ app = FastAPI()
 
 
 # Функция для получения пользователя
-def get_user(username: str):
+async def get_user(username: str):
     # Получает соединение с базой данных из пула подключений (db_pool).
-    conn = db_pool.getconn()
-    # try: и finally: 
+    async with db_pool.connection() as conn:
     #  Обеспечивает безопасное управление ресурсами, гарантируя,
     #  что соединение с базой будет возвращено, даже если произойдёт ошибка.
-    try: # — блок, где выполняются операции, которые могут вызвать ошибку (например, запрос к базе).
-        with conn.cursor() as cur: # conn.cursor() — это как открыть текстовый редактор для работы с базой. 
+        async with conn.cursor() as cur: # conn.cursor() — это как открыть текстовый редактор для работы с базой. 
             # Курсор нужен, чтобы отправлять команды (например, SELECT) и получать результаты.
             # %s — это placeholder (заполнитель), 
             # который заменяется на безопасное значение из кортежа (username,). Это защищает от SQL-инъекций.
-            cur.execute("SELECT username, hashed_password FROM users WHERE username = %s", (username,)) # (username,) — кортеж с одним элементом (запятая обязательна для одиночного значения), передающий имя пользователя в запрос.
+            await cur.execute("SELECT username, hashed_password FROM users WHERE username = %s", (username,)) # (username,) — кортеж с одним элементом (запятая обязательна для одиночного значения), передающий имя пользователя в запрос.
             # Извлекает одну строку результата запроса.
             # После выполнения execute курсор содержит результат запроса. 
             # fetchone() берёт первую (и, в данном случае, единственную) строку.
@@ -74,8 +71,7 @@ def get_user(username: str):
             if user:
                 return {"username": user[0], "hashed_password": user[1]}
             return None
-    finally: # — блок, который выполняется в любом случае (успех или ошибка), чтобы вернуть соединение в пул (db_pool.putconn(conn)).
-        db_pool.putconn(conn)
+
 
 # Хэширование паролей 
 # Утилиты для аутентификации 
@@ -158,31 +154,19 @@ def create_tokens(data: dict, expires_delta: Optional[timedelta] = None):
 @app.post('/register', response_model=Token)
 # user: UserCreate — объект, созданный из JSON-запроса (например, {"username": "alice", "password": "password123"}).
 async def register(user: UserCreate):
-    conn = db_pool.getconn()
-    try:
-        with conn.cursor() as cur:
-            # Проверка сущестует ли пользователь
-            cur.execute('SELECT username FROM users WHERE username = %s', (user.username,))
-            # Возвращает первую строку, если пользователь существует. Если да, выбрасывается HTTPException с кодом 400.
-            if cur.fetchone(): 
-                raise HTTPException(status_code=400, detail='Пользователь уже сущестует')
-            
-            # Хэшируем пароль и сохраняем пользователя
-            hashed_password = get_password_hash(user.password)
-            cur.execute(
+    # Асинхронно проверяет наличие пользователя.
+    if await get_user(user.username):
+        raise HTTPException(status_code=400, detail='Пользователь уже существует')
+
+    hashed_password = get_password_hash(user.password)
+    # Использует асинхронное соединение для записи.
+    async with db_pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
                 'INSERT INTO users (username, hashed_password) VALUES (%s, %s)',
                 (user.username, hashed_password)
             )
-            conn.commit()
-
-            # Генерируем токены
-            return create_tokens(data={'sub': user.username})
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=f'Ошибка регистрации {str(e)}')
-    finally:
-        # Возвращает соединение в пул.
-        db_pool.putconn(conn)
+    return create_tokens(data={'sub': user.username})
 
 # Эндпоинт для получения токена
 @app.post("/token", response_model=Token)
@@ -293,22 +277,25 @@ async def get_products(current_user: str = Depends(get_current_user)):
 # Функция для симуляции тяжёлых вычислений. Это пример задачи, которую можно выполнить в фоне.
 
 # Функция с повторными попытками
-@retry(stop=stop_after_attempt(3), wait=wait_fixed(2)) # 3 попытки с задержкой 2 секунды
+# Декоратор, который пытается выполнить функцию до 3 раз с паузой 2 секунды между попытками, если возникает ошибка.
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(2)) 
 async def compute_factorial_async(n: int, username: str):
     try:
+        # Записывает начало задачи в лог
         logger.info(f"Начало вычисление факториала {n} для {username}")
         await asyncio.sleep(5) # Асинхронная задержка
         result = 1
         for i in range(1, n + 1):
             result *= i
-        conn = db_pool.getconn()
-        async with await conn.cursor() as cur: # Асинхронный курсор (требуется psycopg3)
-            await cur.execute(
-                'INSERT INTO calculations (username, task, result) VALUES (%s, %s, %s)',
-                (username, f"factorial of {n}", result)
-            )
-            await conn.commit()
-        logger.info(f"Успешно вычислен факториал {n} = {result}")
+        async with db_pool.connection() as conn:
+            async with conn.cursor() as cur: # Асинхронный курсор (требуется psycopg3)
+                await cur.execute(
+                    'INSERT INTO calculations (username, task, result) VALUES (%s, %s, %s)',
+                    (username, f"factorial of {n}", result)
+                )
+                await conn.commit()
+            # Записывает успешное завершение.
+            logger.info(f"Успешно вычислен факториал {n} = {result}")
     except Exception as e:
         logger.error(f"Ошибка при вычислении факториала {n}: {str(e)}")
         await conn.rollback()
