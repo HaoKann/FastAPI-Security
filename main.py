@@ -67,7 +67,7 @@ async def get_user(username: str):
             # Извлекает одну строку результата запроса.
             # После выполнения execute курсор содержит результат запроса. 
             # fetchone() берёт первую (и, в данном случае, единственную) строку.
-            user = cur.fetchone()
+            user = await cur.fetchone()
             if user:
                 return {"username": user[0], "hashed_password": user[1]}
             return None
@@ -106,7 +106,7 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 # Генерация JWT токена
-def create_tokens(data: dict, expires_delta: Optional[timedelta] = None):
+async def create_tokens(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
 
     # Access Token
@@ -120,33 +120,30 @@ def create_tokens(data: dict, expires_delta: Optional[timedelta] = None):
     refresh_token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
     # Сохранение refresh-токена в базе 
-    conn = db_pool.getconn()  # Берет соединение с базой данных из пула (db_pool), как ключ от машины, чтобы выполнить запрос.
-    try:
+    async with db_pool.connection() as conn: # Асинхронно берет соединение с базой данных из пула (db_pool), как ключ от машины, чтобы выполнить запрос.
+        async with conn.cursor() as cur:
         # Создаёт курсор (cur) для выполнения SQL-запросов. 
         # Курсор — это специальный объект в библиотеке psycopg2, позволяет Python взаимодействовать с БД PostgreSQL. 
         # Он действует как "указатель" или "инструмент", с помощью которого ты отправляешь SQL-запросы (например, SELECT, INSERT) и получаешь результаты.
         # with гарантирует, что курсор закроется автоматически после завершения блока. 
-        with conn.cursor() as cur:
-            cur.execute(
-                # %s — заполнители, которые заменяются на значения из кортежа (data['sub'], refresh_token, refresh_expire)
-                "INSERT INTO refresh_tokens (username, refresh_token, expiry) VALUES (%s, %s, %s)",
-                    (data['sub'], refresh_token, refresh_expire)
-            )
-            conn.commit()
-    # Ловит любые ошибки (например, если таблица не существует или данные некорректны).
-    except Exception as e:
-        # Откатывает изменения, если произошла ошибка, чтобы база осталась в прежнем состоянии.
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Ошибка сохранения refresh-токена: {str(e)}")
-    finally:
-        # Возвращает соединение в пул, как сдача ключа после поездки
-        db_pool.putconn(conn)
-
-    return {
-        'access_token': access_token,
-        'refresh_token': refresh_token,
-        'token_type': 'bearer'
-    }
+            try:
+                await cur.execute(
+                        # %s — заполнители, которые заменяются на значения из кортежа (data['sub'], refresh_token, refresh_expire)
+                        "INSERT INTO refresh_tokens (username, refresh_token, expiry) VALUES (%s, %s, %s)",
+                        (data['sub'], refresh_token, refresh_expire)
+                    )
+                await conn.commit()
+            # Ловит любые ошибки (например, если таблица не существует или данные некорректны).
+            except Exception as e:
+                # Откатывает изменения, если произошла ошибка, чтобы база осталась в прежнем состоянии.
+                await conn.rollback()
+                raise HTTPException(status_code=500, detail=f"Ошибка сохранения refresh-токена: {str(e)}")
+    
+            return {
+                'access_token': access_token,
+                'refresh_token': refresh_token,
+                'token_type': 'bearer'
+            }
 
 # Эндпоинт для регистрации
 # Принимает данные пользователя, проверяет, не существует ли такой username, хэширует пароль и сохраняет в users. 
@@ -166,12 +163,12 @@ async def register(user: UserCreate):
                 'INSERT INTO users (username, hashed_password) VALUES (%s, %s)',
                 (user.username, hashed_password)
             )
-    return create_tokens(data={'sub': user.username})
+    return await create_tokens(data={'sub': user.username})
 
 # Эндпоинт для получения токена
 @app.post("/token", response_model=Token)
 async def login_for_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = get_user(form_data.username)
+    user = await get_user(form_data.username)
     if not user or not verify_password(form_data.password, user["hashed_password"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -201,7 +198,7 @@ async def refresh_token(token: str):
             raise credentials_exception
         
         # Проверяем, что пользователь все еще существует в системе
-        if get_user(username) is None:
+        if await get_user(username) is None:
             raise credentials_exception
         
         # Если все хорошо, генерируем новую пару токенов
@@ -246,35 +243,39 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
 # Защищённый эндпоинт, который возвращает список продуктов, принадлежащих текущему пользователю.
 @app.get('/products/', response_model=List[Product])
 async def get_products(current_user: str = Depends(get_current_user)):
-    conn = db_pool.getconn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT id, name, price, owner_username FROM products WHERE owner_username = %s",
-                (current_user,)
-            )
-            products = cur.fetchall() # Получает все строки результата.
-            if not products:
-                return [] # Возвращаем пустой список, если продуктов нет
-            return [
-                {
-                    "id": p[0], 
-                    "name": p[1], 
-                    "price": float(p[2]) if p[2] is not None else 0.0,
-                    "owner_username": p[3]
-                } 
-                for p in products
-            ]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Ошибка при получении продуктов {str(e)}')
-    finally:
-        db_pool.putconn(conn)  # Возвращает соединение в пул, даже если произошла ошибка.
-
+    async with db_pool.connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                        "SELECT id, name, price, owner_username FROM products WHERE owner_username = %s",
+                        (current_user,)
+                    )
+                products = await cur.fetchall() # Получает все строки результата.
+                if not products:
+                    return [] # Возвращаем пустой список, если продуктов нет
+                return [
+                    {
+                        "id": p[0], 
+                        "name": p[1], 
+                        "price": float(p[2]) if p[2] is not None else 0.0,
+                        "owner_username": p[3]
+                    } 
+                    for p in products
+                ]
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f'Ошибка при получении продуктов {str(e)}')
+           
 
 
 # BackgroundTasks позволяет запускать тяжёлые задачи (как факториал) в фоне, не блокируя клиента.
 # 1. Фоновые задачи (BackgroundTasks) — для тяжёлых вычислений
 # Функция для симуляции тяжёлых вычислений. Это пример задачи, которую можно выполнить в фоне.
+
+# Добавление уведомлений
+# Функцию для отправки уведомлений через WebSocket после завершения compute_factorial_async
+async def notify_completion(task_id: str, username: str, result: int):
+    await asyncio.sleep(2) # Короткая задержка для симуляции
+    await manager.broadcast(f"Задача {task_id} для {username} завершена, результат: {result}")
 
 # Функция с повторными попытками
 # Декоратор, который пытается выполнить функцию до 3 раз с паузой 2 секунды между попытками, если возникает ошибка.
@@ -296,12 +297,13 @@ async def compute_factorial_async(n: int, username: str):
                 await conn.commit()
             # Записывает успешное завершение.
             logger.info(f"Успешно вычислен факториал {n} = {result}")
+            task_id = f"task_{n}_{username}"
+            await notify_completion(task_id, username, result)
     except Exception as e:
         logger.error(f"Ошибка при вычислении факториала {n}: {str(e)}")
         await conn.rollback()
         raise # Передаём ошибку дальше для retry
-    finally:
-        db_pool.putconn(conn)
+
 
 
 # Эндпоинт для запуска фоновых задач
@@ -326,28 +328,25 @@ async def start_async_computation(n: int, current_user: str = Depends(get_curren
 # Защищённый эндпоинт для создания нового продукта, доступный только авторизованным пользователям.
 @app.post('/products/', response_model=Product, tags=['Products'])
 async def create_product(name: str, price: float, background_tasks: BackgroundTasks, current_user: str = Depends(get_current_user)):
-    conn = db_pool.getconn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                # RETURNING id, name, price, owner_username возвращает только что вставленные данные.
-                "INSERT INTO products (name, price, owner_username) VALUES (%s, %s, %s) RETURNING id, name, price, owner_username",
-                (name, price, current_user)
-            )
-            product_id = cur.fetchone()[0] # Получает первую (и единственную) строку результата вставки.
-            conn.commit()
+    async with db_pool.connection() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                    # RETURNING id, name, price, owner_username возвращает только что вставленные данные.
+                    "INSERT INTO products (name, price, owner_username) VALUES (%s, %s, %s) RETURNING id, name, price, owner_username",
+                    (name, price, current_user)
+                )
+                product_id = (await cur.fetchone())[0] # Получает первую (и единственную) строку результата вставки.
+                await conn.commit()
 
-            # ИСПРАВЛЕНО: Возвращаем Pydantic модель и отправляем JSON в broadcast
-            new_product = Product(id=product_id, name=name, price=price, owner_username=current_user)
-            background_tasks.add_task(manager.broadcast, f"Новый продукт: {new_product.json()}")
-
-            return new_product
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Ошибка создания продукта: {str(e)}")
-    finally:
-        db_pool.putconn(conn)
-
+                # ИСПРАВЛЕНО: Возвращаем Pydantic модель и отправляем JSON в broadcast
+                new_product = Product(id=product_id, name=name, price=price, owner_username=current_user)
+                background_tasks.add_task(manager.broadcast, f"Новый продукт: {new_product.json()}")
+                return new_product
+            
+            except Exception as e:
+                await conn.rollback()
+                raise HTTPException(status_code=500, detail=f"Ошибка создания продукта: {str(e)}")
 
 
 
