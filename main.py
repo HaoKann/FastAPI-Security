@@ -175,7 +175,7 @@ async def login_for_token(form_data: OAuth2PasswordRequestForm = Depends()):
             detail="Неверный логин или пароль",
         )
     
-    return create_tokens(
+    return await create_tokens(
         data={"sub": user["username"]},
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
@@ -202,7 +202,7 @@ async def refresh_token(token: str):
             raise credentials_exception
         
         # Если все хорошо, генерируем новую пару токенов
-        return create_tokens(data={"sub": username})
+        return await create_tokens(data={"sub": username})
     except JWTError:
         # Exception — это общий класс всех исключений в Python. 
         # Указывая except Exception, ты ловишь любые ошибки, которые могут возникнуть в блоке try
@@ -304,6 +304,36 @@ async def compute_factorial_async(n: int, username: str):
         await conn.rollback()
         raise # Передаём ошибку дальше для retry
 
+# Функция compute_sum_range, которая вычисляет сумму чисел в заданном диапазоне асинхронно.
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
+async def compute_sum_range(start: int, end: int, username: str):
+    try:
+        logger.info(f"Начало вычисления суммы от {start} до {end} для {username}")
+        await asyncio.sleep(3) # Симуляция длительной задачи
+        result = sum(range(start, end + 1))
+        async with db_pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    'INSERT INTO calculations (username, task, result) VALUES (%s, %s, %s)',
+                    (username, f"sum from {start} to {end}", result)
+                )
+                await conn.commit()
+        logger.info(f"Успешно вычислена сумма от {start} до {end} = {result}")
+        task_id = f"task_sum_{start}_{end}_{username}"
+        await notify_completion(task_id, username, result)
+    except Exception as e:
+        logger.error(f"Ошибка при вычислении суммы: {str(e)}")
+        await conn.rollback()
+        raise
+
+
+@app.post('/compute/sum')
+async def start_sum_computation(start: int, end: int, current_user: str = Depends(get_current_user), background_tasks: BackgroundTasks = None):
+    if start > end:
+        raise HTTPException(status_code=400, detail='Начало диапазона должно быть меньше или равно конццу')
+    if background_tasks:
+        background_tasks.add_task(compute_sum_range, start, end, current_user)
+    return {'message': f'Асинхронное вычисление суммы от {start} до {end} начато в фоне'}
 
 
 # Эндпоинт для запуска фоновых задач
