@@ -19,6 +19,8 @@ import logging
 from tenacity import retry, stop_after_attempt, wait_fixed
 # Поддержка асинхронного программирования для не блокирующих операций.
 import asyncio
+from starlette import status
+
 
 load_dotenv()
 DB_HOST = os.getenv('DB_HOST')
@@ -305,6 +307,8 @@ async def compute_factorial_async(n: int, username: str):
         raise # Передаём ошибку дальше для retry
 
 # Функция compute_sum_range, которая вычисляет сумму чисел в заданном диапазоне асинхронно.
+# @retry - декоратор из библиотеки tenacity, который позволяет повторить выполнение функции до 3 раз с интервалом 2 секунды, 
+# если она завершится с ошибкой. Это полезно для обработки временных сбоев (например, с базой данных).
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
 async def compute_sum_range(start: int, end: int, username: str):
     try:
@@ -324,6 +328,7 @@ async def compute_sum_range(start: int, end: int, username: str):
     except Exception as e:
         logger.error(f"Ошибка при вычислении суммы: {str(e)}")
         await conn.rollback()
+        # Передаёт исключение дальше, чтобы оно было обработано вызывающим кодом.
         raise
 
 
@@ -331,6 +336,7 @@ async def compute_sum_range(start: int, end: int, username: str):
 async def start_sum_computation(start: int, end: int, current_user: str = Depends(get_current_user), background_tasks: BackgroundTasks = None):
     if start > end:
         raise HTTPException(status_code=400, detail='Начало диапазона должно быть меньше или равно конццу')
+    # Проверка наличия объекта background_tasks
     if background_tasks:
         background_tasks.add_task(compute_sum_range, start, end, current_user)
     return {'message': f'Асинхронное вычисление суммы от {start} до {end} начато в фоне'}
@@ -417,6 +423,7 @@ manager = ConnectionManager()
 # Устанавливает WebSocket-соединение, проверяет токен и обрабатывает сообщения.
 # Зачем: Создаёт чат и уведомления в реальном времени.
 # @app.websocket(WebSocket-роут) нужен для создания постоянного соединения
+# Создан для уведомлений о завершении фоновых задач (например, compute_factorial_async или compute_sum_range)
 @app.websocket("/ws/products")
 # websocket: WebSocket — объект соединения
 # token: str = Query(...) — токен авторизации, переданный как параметр запроса (обязательный, так как ... указывает на это).
@@ -466,6 +473,35 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
         await manager.broadcast(f"Клиент '{username}' покинул чат.")
 
 
+
+# Добавление WebSocket-эндпоинта (/ws/chat)
+# Цель: Настроить чат, где пользователи могут отправлять сообщения.
+# Предназначен для интерактивного чата, где пользователи сами отправляют сообщения.
+@app.websocket('/ws/chat')
+async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
+    username: Optional[str] = None
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "access":
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return 
+        username = payload.get('sub')
+        if username is None or await get_user(username) is None:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+    except JWTError:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return 
+    await manager.connect(websocket)
+    await manager.broadcast(f"Клиент '{username}' присоединился к чату ")
+    try:
+        # Бесконечный цикл, слушающий входящие сообщения.
+        while True:
+            data = await websocket.receive_text()
+            await manager.broadcast(f"{username}: {data}")
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+        await manager.broadcast(f"Клиент '{username}' покинул чат ")
 
 
 
