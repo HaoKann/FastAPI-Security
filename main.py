@@ -19,10 +19,15 @@ import logging
 from tenacity import retry, stop_after_attempt, wait_fixed
 # Поддержка асинхронного программирования для не блокирующих операций.
 import asyncio
+# starlette — это основа FastAPI, а status — набор кодов для HTTP и WebSocket.
 from starlette import status
+
+from database import get_user, get_password_hash, verify_password, db_pool
+from bg_tasks import compute_factorial_async, compute_sum_range
 
 
 load_dotenv()
+
 DB_HOST = os.getenv('DB_HOST')
 DB_PORT = os.getenv('DB_PORT')
 DB_NAME = os.getenv('DB_NAME')
@@ -55,25 +60,6 @@ app = FastAPI()
 
 
 
-# Функция для получения пользователя
-async def get_user(username: str):
-    # Получает соединение с базой данных из пула подключений (db_pool).
-    async with db_pool.connection() as conn:
-    #  Обеспечивает безопасное управление ресурсами, гарантируя,
-    #  что соединение с базой будет возвращено, даже если произойдёт ошибка.
-        async with conn.cursor() as cur: # conn.cursor() — это как открыть текстовый редактор для работы с базой. 
-            # Курсор нужен, чтобы отправлять команды (например, SELECT) и получать результаты.
-            # %s — это placeholder (заполнитель), 
-            # который заменяется на безопасное значение из кортежа (username,). Это защищает от SQL-инъекций.
-            await cur.execute("SELECT username, hashed_password FROM users WHERE username = %s", (username,)) # (username,) — кортеж с одним элементом (запятая обязательна для одиночного значения), передающий имя пользователя в запрос.
-            # Извлекает одну строку результата запроса.
-            # После выполнения execute курсор содержит результат запроса. 
-            # fetchone() берёт первую (и, в данном случае, единственную) строку.
-            user = await cur.fetchone()
-            if user:
-                return {"username": user[0], "hashed_password": user[1]}
-            return None
-
 
 # Хэширование паролей 
 # Утилиты для аутентификации 
@@ -99,27 +85,23 @@ class UserCreate(BaseModel):
     username: str
     password: str
 
-# Функции для работы с паролями
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
-
-# Хэширует пароль с помощью bcrypt для безопасного хранения.
-def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
 
 # Генерация JWT токена
 async def create_tokens(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
+    if expires_delta:
+        to_encode.update({'exp': datetime.utcnow() + timedelta(minutes=expires_delta)})
 
     # Access Token
-    access_expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({'exp': access_expire, 'type': 'access'})
+    to_encode['type'] = 'access'
     access_token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
+    
     # Refresh Token
-    refresh_expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    to_encode.update({'exp': refresh_expire, 'type': 'refresh'})
+    to_encode['type'] = 'refresh'
+    to_encode.pop('exp', None)
+    to_encode.update({'exp': datetime.utcnow() + timedelta(days=7)})
     refresh_token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return {'access_token': access_token, 'refresh_token': refresh_token, 'token_type': 'bearer'}
 
     # Сохранение refresh-токена в базе 
     async with db_pool.connection() as conn: # Асинхронно берет соединение с базой данных из пула (db_pool), как ключ от машины, чтобы выполнить запрос.
@@ -152,11 +134,10 @@ async def create_tokens(data: dict, expires_delta: Optional[timedelta] = None):
 # Затем выдаёт токены.
 @app.post('/register', response_model=Token)
 # user: UserCreate — объект, созданный из JSON-запроса (например, {"username": "alice", "password": "password123"}).
-async def register(user: UserCreate):
+async def register(user: UserCreate, background_tasks: BackgroundTasks = None):
     # Асинхронно проверяет наличие пользователя.
     if await get_user(user.username):
         raise HTTPException(status_code=400, detail='Пользователь уже существует')
-
     hashed_password = get_password_hash(user.password)
     # Использует асинхронное соединение для записи.
     async with db_pool.connection() as conn:
@@ -185,35 +166,16 @@ async def login_for_token(form_data: OAuth2PasswordRequestForm = Depends()):
 
 # Эндпоинт для обновления токенов
 @app.post("/refresh", response_model=Token)
-async def refresh_token(token: str):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Невалидный refresh-токен",
-    )
+async def refresh_token(refresh_token: str = Depends(get_refresh_token)):
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        if payload.get("type") != "refresh":
-            raise credentials_exception
-        
+        payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
         username = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-        
-        # Проверяем, что пользователь все еще существует в системе
-        if await get_user(username) is None:
-            raise credentials_exception
-        
-        # Если все хорошо, генерируем новую пару токенов
-        return await create_tokens(data={"sub": username})
+        if payload.get('type') != 'refresh' or not username:
+            raise HTTPException(status_code=400, detail='Неверный refresh-токен')
+        return await create_tokens(data={'sub':username})
     except JWTError:
-        # Exception — это общий класс всех исключений в Python. 
-        # Указывая except Exception, ты ловишь любые ошибки, которые могут возникнуть в блоке try
-        # as e присваивает пойманное исключение переменной e, 
-        # чтобы ты мог использовать информацию об ошибке (например, текст ошибки).
-        raise credentials_exception
+        raise HTTPException(status_code=400, detail='Неверный refresh токен')
     
-
-
 # Защищённый эндпоинт для пользователя и просмотра продуктов . Говорим FastAPI, что будем искать токен в заголовке: Authorization: Bearer <token>
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl='token')
 
@@ -231,15 +193,18 @@ async def protected_route(token: str = Depends(oauth2_scheme)):
 
 # Защищённый эндпоинт для просмотра продуктов  
 # Функция для извлечения имени пользователя из токена. Использует Depends(oauth2_scheme) для автоматической проверки токена(авторизации юзера)
-def get_current_user(token: str = Depends(oauth2_scheme)):
+async def get_current_user(token: str = Depends(oauth2_scheme)):
     try: 
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username = payload.get('sub')
-        if not username:
-            raise HTTPException(status_code=401, detail='Неверный токен')
+        username: str = payload.get('sub')
+        if username is None:
+            raise HTTPException(status_code=401, detail='Invalid authentication credentials')
+        user = await get_user(username)
+        if user is None:
+            raise HTTPException(status_code=401, detail='Invalid authentication credentials')
         return username
     except JWTError:
-        raise HTTPException(status_code=401, detail='Неверный токен')
+        raise HTTPException(status_code=401, detail='Invalid authentication credentials')
 
 
 # Защищённый эндпоинт, который возвращает список продуктов, принадлежащих текущему пользователю.
@@ -268,74 +233,10 @@ async def get_products(current_user: str = Depends(get_current_user)):
                 raise HTTPException(status_code=500, detail=f'Ошибка при получении продуктов {str(e)}')
            
 
-
-# BackgroundTasks позволяет запускать тяжёлые задачи (как факториал) в фоне, не блокируя клиента.
-# 1. Фоновые задачи (BackgroundTasks) — для тяжёлых вычислений
-# Функция для симуляции тяжёлых вычислений. Это пример задачи, которую можно выполнить в фоне.
-
-# Добавление уведомлений
-# Функцию для отправки уведомлений через WebSocket после завершения compute_factorial_async
-async def notify_completion(task_id: str, username: str, result: int):
-    await asyncio.sleep(2) # Короткая задержка для симуляции
-    await manager.broadcast(f"Задача {task_id} для {username} завершена, результат: {result}")
-
-# Функция с повторными попытками
-# Декоратор, который пытается выполнить функцию до 3 раз с паузой 2 секунды между попытками, если возникает ошибка.
-@retry(stop=stop_after_attempt(3), wait=wait_fixed(2)) 
-async def compute_factorial_async(n: int, username: str):
-    try:
-        # Записывает начало задачи в лог
-        logger.info(f"Начало вычисление факториала {n} для {username}")
-        await asyncio.sleep(5) # Асинхронная задержка
-        result = 1
-        for i in range(1, n + 1):
-            result *= i
-        async with db_pool.connection() as conn:
-            async with conn.cursor() as cur: # Асинхронный курсор (требуется psycopg3)
-                await cur.execute(
-                    'INSERT INTO calculations (username, task, result) VALUES (%s, %s, %s)',
-                    (username, f"factorial of {n}", result)
-                )
-                await conn.commit()
-            # Записывает успешное завершение.
-            logger.info(f"Успешно вычислен факториал {n} = {result}")
-            task_id = f"task_{n}_{username}"
-            await notify_completion(task_id, username, result)
-    except Exception as e:
-        logger.error(f"Ошибка при вычислении факториала {n}: {str(e)}")
-        await conn.rollback()
-        raise # Передаём ошибку дальше для retry
-
-# Функция compute_sum_range, которая вычисляет сумму чисел в заданном диапазоне асинхронно.
-# @retry - декоратор из библиотеки tenacity, который позволяет повторить выполнение функции до 3 раз с интервалом 2 секунды, 
-# если она завершится с ошибкой. Это полезно для обработки временных сбоев (например, с базой данных).
-@retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
-async def compute_sum_range(start: int, end: int, username: str):
-    try:
-        logger.info(f"Начало вычисления суммы от {start} до {end} для {username}")
-        await asyncio.sleep(3) # Симуляция длительной задачи
-        result = sum(range(start, end + 1))
-        async with db_pool.connection() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    'INSERT INTO calculations (username, task, result) VALUES (%s, %s, %s)',
-                    (username, f"sum from {start} to {end}", result)
-                )
-                await conn.commit()
-        logger.info(f"Успешно вычислена сумма от {start} до {end} = {result}")
-        task_id = f"task_sum_{start}_{end}_{username}"
-        await notify_completion(task_id, username, result)
-    except Exception as e:
-        logger.error(f"Ошибка при вычислении суммы: {str(e)}")
-        await conn.rollback()
-        # Передаёт исключение дальше, чтобы оно было обработано вызывающим кодом.
-        raise
-
-
 @app.post('/compute/sum')
 async def start_sum_computation(start: int, end: int, current_user: str = Depends(get_current_user), background_tasks: BackgroundTasks = None):
     if start > end:
-        raise HTTPException(status_code=400, detail='Начало диапазона должно быть меньше или равно конццу')
+        raise HTTPException(status_code=400, detail='Начало диапазона должно быть меньше или равно концу')
     # Проверка наличия объекта background_tasks
     if background_tasks:
         background_tasks.add_task(compute_sum_range, start, end, current_user)
