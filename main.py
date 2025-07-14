@@ -1,41 +1,25 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Optional, List
-# WebSocket, WebSocketDisconnect — добавляет поддержку WebSocket-протокола и обработку разрыва соединения.
-from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query
  # BackgroundTasks добавляет поддержку фоновых задач.
-from fastapi.background import BackgroundTasks 
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
+from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from pydantic import BaseModel
-import os
-# AsyncConnectionPool позволяет использовать асинхронные запросы (await), 
-# что улучшает производительность и совместимость с asyncio.
-from psycopg_pool import AsyncConnectionPool
 from dotenv import load_dotenv
 # Модуль Python для записи логов (отладка, ошибки, информация).
 import logging
 # tenacity для настройки повторных попыток задач при сбоях.
 from tenacity import retry, stop_after_attempt, wait_fixed
-# Поддержка асинхронного программирования для не блокирующих операций.
-import asyncio
 # starlette — это основа FastAPI, а status — набор кодов для HTTP и WebSocket.
 from starlette import status
 
-from database import get_user, get_password_hash, verify_password, db_pool
+from database import db_pool, get_password_hash, verify_password, get_user
 from bg_tasks import compute_factorial_async, compute_sum_range
-
+from websocket import manager
+from auth import create_tokens, get_current_user, oauth2_scheme
+import os
 
 load_dotenv()
-
-DB_HOST = os.getenv('DB_HOST')
-DB_PORT = os.getenv('DB_PORT')
-DB_NAME = os.getenv('DB_NAME')
-DB_USER = os.getenv('DB_USER')
-DB_PASSWORD = os.getenv('DB_PASSWORD')
-
-# Строка подключения для psycopg, объединяет все переменные окружения (DB_HOST, DB_PORT, и т.д.) в одну строку.
-DB_CONNINFO = f"host={DB_HOST} port={DB_PORT} dbname={DB_NAME} user={DB_USER} password={DB_PASSWORD}"
 
 # Настройки логирования
 # Базовая конфигурация логирования
@@ -46,24 +30,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-# Создаёт пул асинхронных соединений с базой. min_size=1 — минимальное число соединений, max_size=20 — максимальное.
-db_pool = AsyncConnectionPool(conninfo=DB_CONNINFO, min_size=1, max_size=20)
-
-
-# Настройка
-SECRET_KEY = os.getenv('SECRET_KEY')
-ALGORITHM = 'HS256'
-ACCESS_TOKEN_EXPIRE_MINUTES = 30 
-REFRESH_TOKEN_EXPIRE_DAYS = 7 
-
 app = FastAPI()
-
-
-
-
-# Хэширование паролей 
-# Утилиты для аутентификации 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 # Pydantic модели
@@ -86,48 +53,6 @@ class UserCreate(BaseModel):
     password: str
 
 
-# Генерация JWT токена
-async def create_tokens(data: dict, expires_delta: Optional[timedelta] = None):
-    to_encode = data.copy()
-    if expires_delta:
-        to_encode.update({'exp': datetime.utcnow() + timedelta(minutes=expires_delta)})
-
-    # Access Token
-    to_encode['type'] = 'access'
-    access_token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    
-    # Refresh Token
-    to_encode['type'] = 'refresh'
-    to_encode.pop('exp', None)
-    to_encode.update({'exp': datetime.utcnow() + timedelta(days=7)})
-    refresh_token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return {'access_token': access_token, 'refresh_token': refresh_token, 'token_type': 'bearer'}
-
-    # Сохранение refresh-токена в базе 
-    async with db_pool.connection() as conn: # Асинхронно берет соединение с базой данных из пула (db_pool), как ключ от машины, чтобы выполнить запрос.
-        async with conn.cursor() as cur:
-        # Создаёт курсор (cur) для выполнения SQL-запросов. 
-        # Курсор — это специальный объект в библиотеке psycopg2, позволяет Python взаимодействовать с БД PostgreSQL. 
-        # Он действует как "указатель" или "инструмент", с помощью которого ты отправляешь SQL-запросы (например, SELECT, INSERT) и получаешь результаты.
-        # with гарантирует, что курсор закроется автоматически после завершения блока. 
-            try:
-                await cur.execute(
-                        # %s — заполнители, которые заменяются на значения из кортежа (data['sub'], refresh_token, refresh_expire)
-                        "INSERT INTO refresh_tokens (username, refresh_token, expiry) VALUES (%s, %s, %s)",
-                        (data['sub'], refresh_token, refresh_expire)
-                    )
-                await conn.commit()
-            # Ловит любые ошибки (например, если таблица не существует или данные некорректны).
-            except Exception as e:
-                # Откатывает изменения, если произошла ошибка, чтобы база осталась в прежнем состоянии.
-                await conn.rollback()
-                raise HTTPException(status_code=500, detail=f"Ошибка сохранения refresh-токена: {str(e)}")
-    
-            return {
-                'access_token': access_token,
-                'refresh_token': refresh_token,
-                'token_type': 'bearer'
-            }
 
 # Эндпоинт для регистрации
 # Принимает данные пользователя, проверяет, не существует ли такой username, хэширует пароль и сохраняет в users. 
@@ -157,18 +82,19 @@ async def login_for_token(form_data: OAuth2PasswordRequestForm = Depends()):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверный логин или пароль",
         )
-    
     return await create_tokens(
         data={"sub": user["username"]},
+        secret_key=os.getenv('SECRET_KEY'),
+        algorithm=os.getenv('ALGORITHM', 'HS256'),
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
 
 
 # Эндпоинт для обновления токенов
 @app.post("/refresh", response_model=Token)
-async def refresh_token(refresh_token: str = Depends(get_refresh_token)):
+async def refresh_token(refresh_token: str = Depends(oauth2_scheme)):
     try:
-        payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(refresh_token, os.getenv('SECRET_KEY'), algorithms=[os.getenv('ALGORITHM', 'HS256')])
         username = payload.get("sub")
         if payload.get('type') != 'refresh' or not username:
             raise HTTPException(status_code=400, detail='Неверный refresh-токен')
@@ -176,36 +102,12 @@ async def refresh_token(refresh_token: str = Depends(get_refresh_token)):
     except JWTError:
         raise HTTPException(status_code=400, detail='Неверный refresh токен')
     
-# Защищённый эндпоинт для пользователя и просмотра продуктов . Говорим FastAPI, что будем искать токен в заголовке: Authorization: Bearer <token>
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl='token')
 
 # Защищенный эндпоинт для пользователя
 @app.get('/protected')
-async def protected_route(token: str = Depends(oauth2_scheme)):
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username = payload.get('sub')
-        if not username:
-            raise HTTPException(status_code=401, detail='Неверный токен')
-        return {'message': f'Привет, {username}! Это защищенная зона'}
-    except JWTError:
-        raise HTTPException(status_code=401, detail='Неверный токен')
-
-# Защищённый эндпоинт для просмотра продуктов  
-# Функция для извлечения имени пользователя из токена. Использует Depends(oauth2_scheme) для автоматической проверки токена(авторизации юзера)
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    try: 
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get('sub')
-        if username is None:
-            raise HTTPException(status_code=401, detail='Invalid authentication credentials')
-        user = await get_user(username)
-        if user is None:
-            raise HTTPException(status_code=401, detail='Invalid authentication credentials')
-        return username
-    except JWTError:
-        raise HTTPException(status_code=401, detail='Invalid authentication credentials')
-
+async def protected_route(current_user: str = Depends(get_current_user)):
+        return {'message': f'Привет, {current_user}! Это защищенная зона'}
+   
 
 # Защищённый эндпоинт, который возвращает список продуктов, принадлежащих текущему пользователю.
 @app.get('/products/', response_model=List[Product])
@@ -214,9 +116,9 @@ async def get_products(current_user: str = Depends(get_current_user)):
         async with conn.cursor() as cur:
             try:
                 await cur.execute(
-                        "SELECT id, name, price, owner_username FROM products WHERE owner_username = %s",
-                        (current_user,)
-                    )
+                    "SELECT id, name, price, owner_username FROM products WHERE owner_username = %s",
+                    (current_user,)
+                )
                 products = await cur.fetchall() # Получает все строки результата.
                 if not products:
                     return [] # Возвращаем пустой список, если продуктов нет
@@ -232,7 +134,7 @@ async def get_products(current_user: str = Depends(get_current_user)):
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f'Ошибка при получении продуктов {str(e)}')
            
-
+# Эндпоинт для запуска вычисления суммы
 @app.post('/compute/sum')
 async def start_sum_computation(start: int, end: int, current_user: str = Depends(get_current_user), background_tasks: BackgroundTasks = None):
     if start > end:
@@ -280,129 +182,10 @@ async def create_product(name: str, price: float, background_tasks: BackgroundTa
                 new_product = Product(id=product_id, name=name, price=price, owner_username=current_user)
                 background_tasks.add_task(manager.broadcast, f"Новый продукт: {new_product.json()}")
                 return new_product
-            
             except Exception as e:
                 await conn.rollback()
                 raise HTTPException(status_code=500, detail=f"Ошибка создания продукта: {str(e)}")
 
-
-
-# 2. WebSocket подключения
-# Зачем: Позволяет организовать чат и уведомления.
-# ConnectionManager - определяет класс для управления WebSocket-подключениями (например, чат).
-class ConnectionManager:  
-    # Инициализирует объект класса при его создании.
-    def __init__(self):
-        self.active_connections: list[WebSocket] = [] # Создаёт пустой список для хранения всех активных WebSocket-соединений. 
-        # Тип list[WebSocket] указывает, что список содержит объекты типа WebSocket.
-
-    # connect: Принимает соединение, добавляет его в список
-    # Асинхронный метод для подключения нового клиента
-    async def connect(self, websocket: WebSocket):
-        # Принимает входящее WebSocket-соединение, устанавливая "рукопожатие" между клиентом и сервером.
-        await websocket.accept()
-        # Добавляет новое соединение в список активных
-        self.active_connections.append(websocket)
-
-    # disconnect: Удаляет соединение при разрыве.
-    def disconnect(self, websocket: WebSocket):
-        # Проверяет, есть ли соединение в списке, чтобы избежать ошибки при удалении.
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
-
-    # broadcast: Асинхронный метод для отправки сообщения всем подключённым клиентам.
-    async def broadcast(self, message: str):
-        # Проходит по всем активным соединениям.
-        for connection in self.active_connections:
-            # Отправляет текстовое сообщение каждому клиенту асинхронно.
-            await connection.send_text(message)
-
-# ConnectionManager управляет подключениями и рассылает сообщения
-manager = ConnectionManager()
-
-
-# Устанавливает WebSocket-соединение, проверяет токен и обрабатывает сообщения.
-# Зачем: Создаёт чат и уведомления в реальном времени.
-# @app.websocket(WebSocket-роут) нужен для создания постоянного соединения
-# Создан для уведомлений о завершении фоновых задач (например, compute_factorial_async или compute_sum_range)
-@app.websocket("/ws/products")
-# websocket: WebSocket — объект соединения
-# token: str = Query(...) — токен авторизации, переданный как параметр запроса (обязательный, так как ... указывает на это).
-async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
-    # Объявляет переменную username, которая может быть None (опциональный тип), для хранения имени пользователя
-    username: Optional[str] = None
-    try:
-        # Шаг 1: Декодируем токен
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        
-        # Шаг 2: Проверяем тип токена (должен быть access)
-        if payload.get("type") != "access":
-            # Закрывает соединение с кодом ошибки 1008 (нарушение политики) и сообщением.
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token type")
-            # Прерывает выполнение функции при ошибке
-            return
-
-        username = payload.get("sub")
-        # Шаг 3: Проверяет, что username существует и пользователь найден в базе. Если нет, закрывает соединение.
-        if username is None or get_user(username) is None:
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="User not found")
-            return
-        
-    # Ловит ошибки декодирования токена (например, истёкший или неверный токен).
-    except JWTError:
-        # Если токен невалидный или просрочен
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token")
-        return
-
-    # Если все проверки пройдены, подключаем пользователя
-    # Подключает клиента через manager
-    await manager.connect(websocket)
-    # Уведомляет всех подключённых клиентов о новом пользователе.
-    await manager.broadcast(f"Клиент '{username}' присоединился к чату.")
-    # Начинает блок для обработки сообщений, где может произойти разрыв соединения.
-    try:
-        # Ожидаем сообщения
-        while True:
-            # Асинхронно получает текстовое сообщение от клиента.
-            data = await websocket.receive_text()
-            # Рассылает полученное сообщение всем клиентам с именем отправителя.
-            await manager.broadcast(f"{username}: {data}")
-    # Ловит событие разрыва соединения.
-    except WebSocketDisconnect:
-        # Удаляет клиента из списка активных соединений.
-        manager.disconnect(websocket)
-        await manager.broadcast(f"Клиент '{username}' покинул чат.")
-
-
-
-# Добавление WebSocket-эндпоинта (/ws/chat)
-# Цель: Настроить чат, где пользователи могут отправлять сообщения.
-# Предназначен для интерактивного чата, где пользователи сами отправляют сообщения.
-@app.websocket('/ws/chat')
-async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
-    username: Optional[str] = None
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        if payload.get("type") != "access":
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return 
-        username = payload.get('sub')
-        if username is None or await get_user(username) is None:
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
-    except JWTError:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return 
-    await manager.connect(websocket)
-    await manager.broadcast(f"Клиент '{username}' присоединился к чату ")
-    try:
-        # Бесконечный цикл, слушающий входящие сообщения.
-        while True:
-            data = await websocket.receive_text()
-            await manager.broadcast(f"{username}: {data}")
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-        await manager.broadcast(f"Клиент '{username}' покинул чат ")
 
 
 
