@@ -7,7 +7,7 @@ This is a FastAPI-based project that implements a secure REST API with user auth
 
 - **Authentication**: Users can register, log in, and refresh tokens using OAuth2 with JWT.
 - **Product Management**: Authenticated users can view and create products associated with their accounts.
-- **Database**: Uses PostgreSQL with `psycopg2` for database operations.
+- **Database**: Uses PostgreSQL with `asyncpg` for database operations.
 
 ## Features
 
