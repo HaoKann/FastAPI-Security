@@ -26,7 +26,7 @@ async def create_tokens(data: dict, secret_key: str, algorithm: str, expires_del
     # Refresh Token
     to_encode['type'] = 'refresh'
     to_encode.pop('exp', None)
-    to_encode.update({'exp': timedelta(days=7)})
+    to_encode.update({'exp': timedelta(days=int(os.getenv('REFRESH_TOKEN_EXPIRE_DAYS', 7)))})
     refresh_token = jwt.encode(to_encode, secret_key, algorithm=algorithm)
 
     # Сохранение refresh-токена в базе 
@@ -37,7 +37,7 @@ async def create_tokens(data: dict, secret_key: str, algorithm: str, expires_del
         # Он действует как "указатель" или "инструмент", с помощью которого ты отправляешь SQL-запросы (например, SELECT, INSERT) и получаешь результаты.
         # with гарантирует, что курсор закроется автоматически после завершения блока. 
             try:
-                refresh_expire = datetime.utcnow() + timedelta(days=7)
+                refresh_expire = datetime.utcnow() + timedelta(days=int(os.getenv('REFRESH_TOKEN_EXPIRE_DAYS', 7)))
                 await cur.execute(
                         # %s — заполнители, которые заменяются на значения из кортежа (data['sub'], refresh_token, refresh_expire)
                         "INSERT INTO refresh_tokens (username, refresh_token, expiry) VALUES (%s, %s, %s)",

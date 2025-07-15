@@ -8,12 +8,10 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 # Модуль Python для записи логов (отладка, ошибки, информация).
 import logging
-# tenacity для настройки повторных попыток задач при сбоях.
-from tenacity import retry, stop_after_attempt, wait_fixed
 # starlette — это основа FastAPI, а status — набор кодов для HTTP и WebSocket.
 from starlette import status
 
-from database import db_pool, get_password_hash, verify_password, get_user
+from database import db_pool, get_password_hash, verify_password, get_user, get_db_pool
 from bg_tasks import compute_factorial_async, compute_sum_range
 from websocket import manager
 from auth import create_tokens, get_current_user, oauth2_scheme
@@ -32,6 +30,11 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+# Инициализация пула соединений при старте приложения
+@app.on_event('startup')
+async def startup_event():
+    global db_pool
+    db_pool = await get_db_pool()
 
 # Pydantic модели
 class Token(BaseModel):
@@ -71,7 +74,7 @@ async def register(user: UserCreate, background_tasks: BackgroundTasks = None):
                 'INSERT INTO users (username, hashed_password) VALUES (%s, %s)',
                 (user.username, hashed_password)
             )
-    return await create_tokens(data={'sub': user.username})
+    return await create_tokens(data={'sub': user.username}, secret_key=os.getenv('SECRET_KEY'), algorithm=os.getenv('ALGORITHM', 'HS256'))
 
 # Эндпоинт для получения токена
 @app.post("/token", response_model=Token)
@@ -86,7 +89,7 @@ async def login_for_token(form_data: OAuth2PasswordRequestForm = Depends()):
         data={"sub": user["username"]},
         secret_key=os.getenv('SECRET_KEY'),
         algorithm=os.getenv('ALGORITHM', 'HS256'),
-        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expires_delta=timedelta(minutes=int(os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES', 30)))
     )
 
 
@@ -98,7 +101,7 @@ async def refresh_token(refresh_token: str = Depends(oauth2_scheme)):
         username = payload.get("sub")
         if payload.get('type') != 'refresh' or not username:
             raise HTTPException(status_code=400, detail='Неверный refresh-токен')
-        return await create_tokens(data={'sub':username})
+        return await create_tokens(data={'sub':username}, secret_key=os.getenv('SECRET_KEY'), algorithm=os.getenv('ALGORITHM','HS256'))
     except JWTError:
         raise HTTPException(status_code=400, detail='Неверный refresh токен')
     
@@ -177,7 +180,6 @@ async def create_product(name: str, price: float, background_tasks: BackgroundTa
                 )
                 product_id = (await cur.fetchone())[0] # Получает первую (и единственную) строку результата вставки.
                 await conn.commit()
-
                 # ИСПРАВЛЕНО: Возвращаем Pydantic модель и отправляем JSON в broadcast
                 new_product = Product(id=product_id, name=name, price=price, owner_username=current_user)
                 background_tasks.add_task(manager.broadcast, f"Новый продукт: {new_product.json()}")
