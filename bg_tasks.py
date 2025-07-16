@@ -4,7 +4,7 @@ from tenacity import retry, stop_after_attempt, wait_fixed
 import asyncio
 # Модуль Python для записи логов (отладка, ошибки, информация).
 import logging
-from database import db_pool
+
 
 logger = logging.getLogger('main')
 
@@ -23,7 +23,7 @@ async def notify_completion(task_id: str, username: str, result: int):
 # Функция с повторными попытками
 # Декоратор, который пытается выполнить функцию до 3 раз с паузой 2 секунды между попытками, если возникает ошибка.
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2)) 
-async def compute_factorial_async(n: int, username: str):
+async def compute_factorial_async(db_pool, n: int, username: str):
     try:
         # Записывает начало задачи в лог
         logger.info(f"Начало вычисление факториала {n} для {username}")
@@ -51,7 +51,7 @@ async def compute_factorial_async(n: int, username: str):
 # @retry - декоратор из библиотеки tenacity, который позволяет повторить выполнение функции до 3 раз с интервалом 2 секунды, 
 # если она завершится с ошибкой. Это полезно для обработки временных сбоев (например, с базой данных).
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
-async def compute_sum_range(start: int, end: int, username: str):
+async def compute_sum_range(db_pool, start: int, end: int, username: str):
     try:
         logger.info(f"Начало вычисления суммы от {start} до {end} для {username}")
         await asyncio.sleep(3) # Симуляция длительной задачи
@@ -65,7 +65,7 @@ async def compute_sum_range(start: int, end: int, username: str):
                 await conn.commit()
         logger.info(f"Успешно вычислена сумма от {start} до {end} = {result}")
         task_id = f"task_sum_{start}_{end}_{username}"
-        await notify_completion(task_id, username, result)
+        await notify_completion(task_id, username, result, db_pool)
     except Exception as e:
         logger.error(f"Ошибка при вычислении суммы: {str(e)}")
         await conn.rollback()

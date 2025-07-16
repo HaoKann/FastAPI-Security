@@ -9,10 +9,9 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 async def get_db_pool():
     return await asyncpg.create_pool(dsn="postgresql://postgres:123456789@localhost/fastapi_auth")
 
-db_pool = get_db_pool()
 
 # Функция для получения пользователя
-async def get_user(username: str) -> Optional[dict]:
+async def get_user(db_pool, username: str) -> Optional[dict]:
     # Получает соединение с базой данных из пула подключений (db_pool).
     async with db_pool.connection() as conn:
     #  Обеспечивает безопасное управление ресурсами, гарантируя,
@@ -39,4 +38,4 @@ def get_password_hash(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
-__all__ = ['db_pool', 'get_user', 'get_password_hash', 'verify_password']
+__all__ = ['get_db_pool', 'get_user', 'get_password_hash', 'verify_password']

@@ -5,7 +5,7 @@ from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 import os
 from dotenv import load_dotenv
-from database import db_pool, get_user
+from database import get_user
 
 load_dotenv()
 
@@ -14,7 +14,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl='token')
 
 
 # Генерация JWT токена
-async def create_tokens(data: dict, secret_key: str, algorithm: str, expires_delta: Optional[timedelta] = None):
+async def create_tokens(db_pool, data: dict, secret_key: str, algorithm: str, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     if expires_delta:
         to_encode.update({'exp': datetime.utcnow() + expires_delta})
@@ -57,7 +57,7 @@ async def create_tokens(data: dict, secret_key: str, algorithm: str, expires_del
 
 # Защищённый эндпоинт для просмотра продуктов  
 # Функция для извлечения имени пользователя из токена. Использует Depends(oauth2_scheme) для автоматической проверки токена(авторизации юзера)
-async def get_current_user(token: str = Depends(oauth2_scheme)):
+async def get_current_user(db_pool, token: str = Depends(oauth2_scheme)):
     try: 
         payload = jwt.decode(token, os.getenv('SECRET_KEY'), algorithms=[os.getenv('ALGORITHM', 'HS256')])
         username: str = payload.get('sub')
