@@ -12,22 +12,18 @@ async def get_db_pool():
 
 # Функция для получения пользователя
 async def get_user(db_pool, username: str) -> Optional[dict]:
+    # Конструкция async with гарантирует, что соединение будет корректно возвращено в пул после завершения блока, 
+    # даже если возникнет ошибка.
     # Получает соединение с базой данных из пула подключений (db_pool).
-    async with db_pool.connection() as conn:
-    #  Обеспечивает безопасное управление ресурсами, гарантируя,
-    #  что соединение с базой будет возвращено, даже если произойдёт ошибка.
-        async with conn.cursor() as cur: # conn.cursor() — это как открыть текстовый редактор для работы с базой. 
-            # Курсор нужен, чтобы отправлять команды (например, SELECT) и получать результаты.
-            # %s — это placeholder (заполнитель), 
-            # который заменяется на безопасное значение из кортежа (username,). Это защищает от SQL-инъекций.
-            await cur.execute("SELECT username, hashed_password FROM users WHERE username = %s", (username,)) # (username,) — кортеж с одним элементом (запятая обязательна для одиночного значения), передающий имя пользователя в запрос.
-            # Извлекает одну строку результата запроса.
-            # После выполнения execute курсор содержит результат запроса. 
-            # fetchone() берёт первую (и, в данном случае, единственную) строку.
-            user = await cur.fetchone()
-            if user:
-                return {"username": user[0], "hashed_password": user[1]}
-            return None
+    # db_pool.acquire() асинхронно берёт соединение из пула
+    async with db_pool.acquire() as conn:
+        # fetchrow() выполняет запрос и возвращает одну строку как словарь, что упрощает доступ к данным (user["username"] вместо user[0]).
+        # $1 как параметр вместо %s по синтаксису asyncpg, заменяемый значением username
+        # Это безопасный способ передачи данных, защищающий от SQL-инъекций (в отличие от ручного подстановления строк).
+        user = await conn.fetchrow("SELECT username, hashed_password FROM users WHERE username = $1", username)
+        if user:
+            return {'username': user['username'], 'hashed_password': user['hashed_password']}
+        return None
         
 
 # Хэширует пароль с помощью bcrypt для безопасного хранения.

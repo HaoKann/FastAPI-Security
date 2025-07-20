@@ -70,17 +70,17 @@ async def register(user: UserCreate, background_tasks: BackgroundTasks = None):
         raise HTTPException(status_code=400, detail='Пользователь уже существует')
     hashed_password = get_password_hash(user.password)
     # Использует асинхронное соединение для записи.
-    async with db_pool.connection() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                'INSERT INTO users (username, hashed_password) VALUES (%s, %s)',
-                (user.username, hashed_password)
-            )
-    return await create_tokens(db_pool, 
-                               data={'sub': user.username}, 
-                               secret_key=os.getenv('SECRET_KEY'), 
-                               algorithm=os.getenv('ALGORITHM', 'HS256')
-                               )
+    async with db_pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                'INSERT INTO users (username, hashed_password) VALUES ($1, $2)',
+                user.username, hashed_password
+            ) # Изменения фиксируются автоматически при выходе из блока, если нет ошибок
+            return await create_tokens(db_pool, 
+                                data={'sub': user.username}, 
+                                secret_key=os.getenv('SECRET_KEY'), 
+                                algorithm=os.getenv('ALGORITHM', 'HS256')
+                                )
 
 # Эндпоинт для получения токена
 @app.post("/token", response_model=Token)
@@ -127,28 +127,45 @@ async def protected_route(current_user: str = Depends(lambda: get_current_user(d
 # Защищённый эндпоинт, который возвращает список продуктов, принадлежащих текущему пользователю.
 @app.get('/products/', response_model=List[Product])
 async def get_products(current_user: str = Depends(lambda: get_current_user(db_pool))):
-    async with db_pool.connection() as conn:
-        async with conn.cursor() as cur:
+    async with db_pool.acquire() as conn:
             try:
-                await cur.execute(
-                    "SELECT id, name, price, owner_username FROM products WHERE owner_username = %s",
-                    (current_user,)
+                products = await conn.fetch(
+                    "SELECT id, name, price, owner_username FROM products WHERE owner_username = $1",
+                    current_user
                 )
-                products = await cur.fetchall() # Получает все строки результата.
                 if not products:
                     return [] # Возвращаем пустой список, если продуктов нет
                 return [
                     {
-                        "id": p[0], 
-                        "name": p[1], 
-                        "price": float(p[2]) if p[2] is not None else 0.0,
-                        "owner_username": p[3]
+                        "id": p['id'], 
+                        "name": p['name'], 
+                        "price": float(p['price']) if p['price'] is not None else 0.0,
+                        "owner_username": p['owner_username']
                     } 
                     for p in products
                 ]
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f'Ошибка при получении продуктов {str(e)}')
            
+
+# Защищённый эндпоинт для создания нового продукта, доступный только авторизованным пользователям.
+@app.post('/products/', response_model=Product, tags=['Products'])
+async def create_product(name: str, price: float, background_tasks: BackgroundTasks, current_user: str = Depends(lambda: get_current_user(db_pool))):
+    async with db_pool.acquire() as conn:
+            try:
+                result = await conn.fetchrow(
+                    # RETURNING id, name, price, owner_username возвращает только что вставленные данные.
+                    "INSERT INTO products (name, price, owner_username) VALUES ($1, $2, $3) RETURNING id, name, price, owner_username",
+                    name, price, current_user
+                )
+                # ИСПРАВЛЕНО: Возвращаем Pydantic модель и отправляем JSON в broadcast
+                new_product = Product(id=result['id'], name=result['name'], price=result['price'], owner_username=result['owner_username'])
+                background_tasks.add_task(manager.broadcast, f"Новый продукт: {new_product.json()}")
+                return new_product
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Ошибка создания продукта: {str(e)}")
+            
+
 # Эндпоинт для запуска вычисления суммы
 @app.post('/compute/sum')
 async def start_sum_computation(start: int, end: int, current_user: str = Depends(lambda: get_current_user(db_pool)), background_tasks: BackgroundTasks = None):
@@ -179,26 +196,7 @@ async def start_async_computation(n: int, current_user: str = Depends(lambda: ge
     return {'message': f'Асинхронные вычисления факториала {n} начато в фоне. Результат будет сохранен (максимум 3 попытки)'}
 
 
-# Защищённый эндпоинт для создания нового продукта, доступный только авторизованным пользователям.
-@app.post('/products/', response_model=Product, tags=['Products'])
-async def create_product(name: str, price: float, background_tasks: BackgroundTasks, current_user: str = Depends(lambda: get_current_user(db_pool))):
-    async with db_pool.connection() as conn:
-        async with conn.cursor() as cur:
-            try:
-                await cur.execute(
-                    # RETURNING id, name, price, owner_username возвращает только что вставленные данные.
-                    "INSERT INTO products (name, price, owner_username) VALUES (%s, %s, %s) RETURNING id, name, price, owner_username",
-                    (name, price, current_user)
-                )
-                product_id = (await cur.fetchone())[0] # Получает первую (и единственную) строку результата вставки.
-                await conn.commit()
-                # ИСПРАВЛЕНО: Возвращаем Pydantic модель и отправляем JSON в broadcast
-                new_product = Product(id=product_id, name=name, price=price, owner_username=current_user)
-                background_tasks.add_task(manager.broadcast, f"Новый продукт: {new_product.json()}")
-                return new_product
-            except Exception as e:
-                await conn.rollback()
-                raise HTTPException(status_code=500, detail=f"Ошибка создания продукта: {str(e)}")
+
 
 
 # WebSocket-логика
@@ -272,7 +270,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
 
         username = payload.get("sub")
         # Шаг 3: Проверяет, что username существует и пользователь найден в базе. Если нет, закрывает соединение.
-        if username is None or get_user(username) is None:
+        if username is None or await get_user(username) is None:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="User not found")
             return
         
