@@ -91,14 +91,13 @@ async def login_for_token(form_data: OAuth2PasswordRequestForm = Depends()):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверный логин или пароль",
         )
-    return await create_tokens( 
-                                db_pool,
-                                data={"sub": user["username"]},
-                                secret_key=os.getenv('SECRET_KEY'),
-                                algorithm=os.getenv('ALGORITHM', 'HS256'),
-                                expires_delta=timedelta(minutes=int(os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES', 30)))
-                            )
-
+    return await create_tokens(
+        db_pool,
+        data={"sub": user["username"]},
+        secret_key=os.getenv('SECRET_KEY'),
+        algorithm=os.getenv('ALGORITHM', 'HS256'),
+        expires_delta=timedelta(minutes=int(os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES', 30)))
+    )
 
 # Эндпоинт для обновления токенов
 @app.post("/refresh", response_model=Token)

@@ -9,45 +9,42 @@ from database import get_user
 
 load_dotenv()
 
-# Защищённый эндпоинт для пользователя и просмотра продуктов . Говорим FastAPI, что будем искать токен в заголовке: Authorization: Bearer <token>
+# Говорим FastAPI, что будем искать токен в заголовке: Authorization: Bearer <token>
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl='token')
 
 
 # Генерация JWT токена
 async def create_tokens(db_pool, data: dict, secret_key: str, algorithm: str, expires_delta: Optional[timedelta] = None):
+    # Создаём копию данных для модификации
     to_encode = data.copy()
+
+    # Преобразуем timedelta в timestamp (количество секунд с эпохи)
     if expires_delta:
-        to_encode.update({'exp': datetime.utcnow() + expires_delta})
+        expire = datetime.utcnow() + expires_delta
+        to_encode.update({'exp': expire.timestamp()})
 
     # Access Token
     to_encode['type'] = 'access'
+    print("to_encode:", to_encode)
     access_token = jwt.encode(to_encode, secret_key, algorithm=algorithm)
     
     # Refresh Token
     to_encode['type'] = 'refresh'
     to_encode.pop('exp', None)
-    to_encode.update({'exp': timedelta(days=int(os.getenv('REFRESH_TOKEN_EXPIRE_DAYS', 7)))})
+    to_encode.update({'exp':(datetime.utcnow() + timedelta(days=int(os.getenv('REFRESH_TOKEN_EXPIRE_DAYS', 7)))).timestamp()})
     refresh_token = jwt.encode(to_encode, secret_key, algorithm=algorithm)
 
     # Сохранение refresh-токена в базе 
-    async with db_pool.connection() as conn: # Асинхронно берет соединение с базой данных из пула (db_pool), как ключ от машины, чтобы выполнить запрос.
-        async with conn.cursor() as cur:
-        # Создаёт курсор (cur) для выполнения SQL-запросов. 
-        # Курсор — это специальный объект в библиотеке psycopg2, позволяет Python взаимодействовать с БД PostgreSQL. 
-        # Он действует как "указатель" или "инструмент", с помощью которого ты отправляешь SQL-запросы (например, SELECT, INSERT) и получаешь результаты.
-        # with гарантирует, что курсор закроется автоматически после завершения блока. 
+    async with db_pool.acquire() as conn: # Асинхронно берет соединение с базой данных из пула (db_pool), как ключ от машины, чтобы выполнить запрос.
             try:
                 refresh_expire = datetime.utcnow() + timedelta(days=int(os.getenv('REFRESH_TOKEN_EXPIRE_DAYS', 7)))
-                await cur.execute(
-                        # %s — заполнители, которые заменяются на значения из кортежа (data['sub'], refresh_token, refresh_expire)
-                        "INSERT INTO refresh_tokens (username, refresh_token, expiry) VALUES (%s, %s, %s)",
-                        (data['sub'], refresh_token, refresh_expire)
+                await conn.execute(
+                        "INSERT INTO refresh_tokens (username, refresh_token, expiry) VALUES ($1, $2, $3)",
+                        data['sub'], refresh_token, refresh_expire
                     )
-                await conn.commit()
             # Ловит любые ошибки (например, если таблица не существует или данные некорректны).
             except Exception as e:
                 # Откатывает изменения, если произошла ошибка, чтобы база осталась в прежнем состоянии.
-                await conn.rollback()
                 raise HTTPException(status_code=500, detail=f"Ошибка сохранения refresh-токена: {str(e)}")
             return {
                 'access_token': access_token,
@@ -63,7 +60,7 @@ async def get_current_user(db_pool, token: str = Depends(oauth2_scheme)):
         username: str = payload.get('sub')
         if username is None:
             raise HTTPException(status_code=401, detail='Invalid authentication credentials')
-        user = await get_user(username)
+        user = await get_user(db_pool, username)
         if user is None:
             raise HTTPException(status_code=401, detail='Invalid authentication credentials')
         return username
