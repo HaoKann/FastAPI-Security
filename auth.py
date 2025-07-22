@@ -54,15 +54,17 @@ async def create_tokens(db_pool, data: dict, secret_key: str, algorithm: str, ex
 
 # Защищённый эндпоинт для просмотра продуктов  
 # Функция для извлечения имени пользователя из токена. Использует Depends(oauth2_scheme) для автоматической проверки токена(авторизации юзера)
-async def get_current_user(db_pool, token: str = Depends(oauth2_scheme)):
-    try: 
-        payload = jwt.decode(token, os.getenv('SECRET_KEY'), algorithms=[os.getenv('ALGORITHM', 'HS256')])
-        username: str = payload.get('sub')
-        if username is None:
+def get_current_user_dependency(db_pool):
+    async def get_current_user(token: str = Depends(oauth2_scheme)):
+        try:
+            payload = jwt.decode(token, os.getenv('SECRET_KEY'), algorithms=[os.getenv('ALGORITHM', 'HS256')])
+            username: str = payload.get('sub')
+            if username is None:
+                raise HTTPException(status_code=401, detail='Invalid authentication credentials')
+            user = await get_user(db_pool, username)
+            if user is None:
+                raise HTTPException(status_code=401, detail='Invalid authentication credentials')
+            return username
+        except JWTError:
             raise HTTPException(status_code=401, detail='Invalid authentication credentials')
-        user = await get_user(db_pool, username)
-        if user is None:
-            raise HTTPException(status_code=401, detail='Invalid authentication credentials')
-        return username
-    except JWTError:
-        raise HTTPException(status_code=401, detail='Invalid authentication credentials')
+    return get_current_user

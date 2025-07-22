@@ -13,7 +13,7 @@ from starlette import status
 
 from database import get_password_hash, verify_password, get_user, get_db_pool
 from bg_tasks import compute_factorial_async, compute_sum_range
-from auth import create_tokens, get_current_user, oauth2_scheme
+from auth import create_tokens, get_current_user_dependency
 import os
 
 load_dotenv()
@@ -101,7 +101,7 @@ async def login_for_token(form_data: OAuth2PasswordRequestForm = Depends()):
 
 # Эндпоинт для обновления токенов
 @app.post("/refresh", response_model=Token)
-async def refresh_token(refresh_token: str = Depends(oauth2_scheme)):
+async def refresh_token(refresh_token: str):
     try:
         payload = jwt.decode(refresh_token, os.getenv('SECRET_KEY'), algorithms=[os.getenv('ALGORITHM', 'HS256')])
         username = payload.get("sub")
@@ -119,13 +119,13 @@ async def refresh_token(refresh_token: str = Depends(oauth2_scheme)):
 
 # Защищенный эндпоинт для пользователя
 @app.get('/protected')
-async def protected_route(current_user: str = Depends(lambda: get_current_user(db_pool))):
+async def protected_route(current_user: str = Depends(get_current_user_dependency(db_pool))):
         return {'message': f'Привет, {current_user}! Это защищенная зона'}
    
 
 # Защищённый эндпоинт, который возвращает список продуктов, принадлежащих текущему пользователю.
 @app.get('/products/', response_model=List[Product])
-async def get_products(current_user: str = Depends(lambda: get_current_user(db_pool))):
+async def get_products(current_user: str = Depends(get_current_user_dependency(db_pool))):
     async with db_pool.acquire() as conn:
             try:
                 products = await conn.fetch(
@@ -149,7 +149,7 @@ async def get_products(current_user: str = Depends(lambda: get_current_user(db_p
 
 # Защищённый эндпоинт для создания нового продукта, доступный только авторизованным пользователям.
 @app.post('/products/', response_model=Product, tags=['Products'])
-async def create_product(name: str, price: float, background_tasks: BackgroundTasks, current_user: str = Depends(lambda: get_current_user(db_pool))):
+async def create_product(name: str, price: float, background_tasks: BackgroundTasks, current_user: str = Depends(get_current_user_dependency(db_pool))):
     async with db_pool.acquire() as conn:
             try:
                 result = await conn.fetchrow(
@@ -167,7 +167,7 @@ async def create_product(name: str, price: float, background_tasks: BackgroundTa
 
 # Эндпоинт для запуска вычисления суммы
 @app.post('/compute/sum')
-async def start_sum_computation(start: int, end: int, current_user: str = Depends(lambda: get_current_user(db_pool)), background_tasks: BackgroundTasks = None):
+async def start_sum_computation(start: int, end: int, current_user: str = Depends(lambda: get_current_user_dependency(db_pool)), background_tasks: BackgroundTasks = None):
     if start > end:
         raise HTTPException(status_code=400, detail='Начало диапазона должно быть меньше или равно концу')
     # Проверка наличия объекта background_tasks
@@ -183,7 +183,7 @@ async def start_sum_computation(start: int, end: int, current_user: str = Depend
 # background_tasks: BackgroundTasks = None — объект для фоновых задач.
 # BackgroundTasks — это специальный класс из FastAPI, который позволяет запускать задачи асинхронно после отправки HTTP-ответа.
 # = None означает, что этот параметр необязательный. Если клиент не передаёт его явно (что обычно происходит), он будет None по умолчанию.
-async def start_async_computation(n: int, current_user: str = Depends(lambda: get_current_user(db_pool)), background_tasks: BackgroundTasks = None):
+async def start_async_computation(n: int, current_user: str = Depends(lambda: get_current_user_dependency(db_pool)), background_tasks: BackgroundTasks = None):
     if n <= 0:
         raise HTTPException(status_code=400, detail='Число должно быть положительным')
     # проверяет, существует ли объект BackgroundTasks. Если он есть (например, передан в эндпоинт), задача добавляется в очередь фоновых задач. 
