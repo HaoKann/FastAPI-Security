@@ -1,13 +1,20 @@
 import asyncpg
 from passlib.context import CryptContext
 from typing import Optional
+import os
 
 # Хэширование паролей 
 # Утилиты для аутентификации 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 async def get_db_pool():
-    return await asyncpg.create_pool(dsn="postgresql://postgres:123456789@localhost/fastapi_auth")
+    return await asyncpg.create_pool(
+        host=os.getenv('DB_HOST', 'localhost'),
+        port=int(os.getenv('DB_PORT', 5432)),
+        database=os.getenv('DB_NAME', 'fastapi_auth'),
+        user=os.getenv('DB_USER', 'postgres'),
+        password=os.getenv('DB_PASSWORD', '123456789')
+    )
 
 
 # Функция для получения пользователя

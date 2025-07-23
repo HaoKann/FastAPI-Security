@@ -37,6 +37,22 @@ db_pool = None
 async def startup_event():
     global db_pool
     db_pool = await get_db_pool()
+    print('DB pool initialized:', db_pool is not None)
+    if db_pool is None:
+        print("Warning: Failed to initialize DB Pool. Check database connection.")
+
+# Зависимость для получения db_pool
+async def get_db_pool_dependency():
+    global db_pool
+    if db_pool is None:
+        db_pool = await get_db_pool()
+        print('DB Pool reinitialized in get_db:', db_pool is not None)
+    return db_pool
+
+# Зависимость для текущего пользователя с передачей db_pool
+def get_user_dependency(db_pool):
+    return get_current_user_dependency(db_pool)
+
 
 # Pydantic модели
 class Token(BaseModel):
@@ -119,14 +135,14 @@ async def refresh_token(refresh_token: str):
 
 # Защищенный эндпоинт для пользователя
 @app.get('/protected')
-async def protected_route(current_user: str = Depends(get_current_user_dependency(db_pool))):
-        return {'message': f'Привет, {current_user}! Это защищенная зона'}
+async def protected_route(current_user: str = Depends(lambda: get_user_dependency(await get_db_pool_dependency()))):
+    return {'message': f'Привет, {current_user}! Это защищенная зона'}
    
 
 # Защищённый эндпоинт, который возвращает список продуктов, принадлежащих текущему пользователю.
 @app.get('/products/', response_model=List[Product])
-async def get_products(current_user: str = Depends(get_current_user_dependency(db_pool))):
-    async with db_pool.acquire() as conn:
+async def get_products(current_user: str = Depends(lambda: get_current_user_dependency(await get_db_pool_dependency()))):
+    async with (await get_db_pool_dependency()).acquire() as conn:
             try:
                 products = await conn.fetch(
                     "SELECT id, name, price, owner_username FROM products WHERE owner_username = $1",
@@ -149,8 +165,8 @@ async def get_products(current_user: str = Depends(get_current_user_dependency(d
 
 # Защищённый эндпоинт для создания нового продукта, доступный только авторизованным пользователям.
 @app.post('/products/', response_model=Product, tags=['Products'])
-async def create_product(name: str, price: float, background_tasks: BackgroundTasks, current_user: str = Depends(get_current_user_dependency(db_pool))):
-    async with db_pool.acquire() as conn:
+async def create_product(name: str, price: float, background_tasks: BackgroundTasks, current_user: str = Depends(lambda: get_user_dependency(await get_db_pool_dependency()))):
+    async with (await get_db_pool_dependency()).acquire() as conn:
             try:
                 result = await conn.fetchrow(
                     # RETURNING id, name, price, owner_username возвращает только что вставленные данные.
