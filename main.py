@@ -50,7 +50,7 @@ async def get_db_pool_dependency():
     return db_pool
 
 # Зависимость для текущего пользователя с передачей db_pool
-def get_user_dependency(db_pool):
+async def get_current_user_dependency_with_db(db_pool=Depends(get_db_pool_dependency)):
     return get_current_user_dependency(db_pool)
 
 
@@ -135,13 +135,13 @@ async def refresh_token(refresh_token: str):
 
 # Защищенный эндпоинт для пользователя
 @app.get('/protected')
-async def protected_route(current_user: str = Depends(lambda: get_user_dependency(await get_db_pool_dependency()))):
+async def protected_route(current_user: str = Depends(get_current_user_dependency_with_db)):
     return {'message': f'Привет, {current_user}! Это защищенная зона'}
    
 
 # Защищённый эндпоинт, который возвращает список продуктов, принадлежащих текущему пользователю.
 @app.get('/products/', response_model=List[Product])
-async def get_products(current_user: str = Depends(lambda: get_current_user_dependency(await get_db_pool_dependency()))):
+async def get_products(current_user: str = Depends(get_current_user_dependency_with_db)):
     async with (await get_db_pool_dependency()).acquire() as conn:
             try:
                 products = await conn.fetch(
@@ -165,7 +165,7 @@ async def get_products(current_user: str = Depends(lambda: get_current_user_depe
 
 # Защищённый эндпоинт для создания нового продукта, доступный только авторизованным пользователям.
 @app.post('/products/', response_model=Product, tags=['Products'])
-async def create_product(name: str, price: float, background_tasks: BackgroundTasks, current_user: str = Depends(lambda: get_user_dependency(await get_db_pool_dependency()))):
+async def create_product(name: str, price: float, background_tasks: BackgroundTasks, current_user: str = Depends(get_current_user_dependency_with_db)):
     async with (await get_db_pool_dependency()).acquire() as conn:
             try:
                 result = await conn.fetchrow(
