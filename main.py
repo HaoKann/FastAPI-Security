@@ -2,7 +2,7 @@ from datetime import timedelta
 from typing import Optional, List
  # BackgroundTasks добавляет поддержку фоновых задач.
 from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -13,7 +13,7 @@ from starlette import status
 
 from database import get_password_hash, verify_password, get_user, get_db_pool
 from bg_tasks import compute_factorial_async, compute_sum_range
-from auth import create_tokens, get_current_user_dependency
+from auth import create_tokens, get_current_user_dependency, oauth2_scheme
 import os
 
 load_dotenv()
@@ -51,7 +51,9 @@ async def get_db_pool_dependency():
 
 # Зависимость для текущего пользователя с передачей db_pool
 async def get_current_user_dependency_with_db(db_pool=Depends(get_db_pool_dependency)):
-    return get_current_user_dependency(db_pool)
+    print("DB pool received:", db_pool)
+    current_user_func = get_current_user_dependency(db_pool)
+    return await current_user_func()  # FastAPI передаст токен через oauth2_scheme
 
 
 # Pydantic модели
@@ -133,8 +135,10 @@ async def refresh_token(refresh_token: str):
         raise HTTPException(status_code=400, detail='Неверный refresh токен')
     
 
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl='/token')
+
 # Защищенный эндпоинт для пользователя
-@app.get('/protected')
+@app.get('/protected', dependencies=[Depends(oauth2_scheme)])
 async def protected_route(current_user: str = Depends(get_current_user_dependency_with_db)):
     return {'message': f'Привет, {current_user}! Это защищенная зона'}
    

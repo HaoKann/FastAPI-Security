@@ -31,20 +31,17 @@ async def compute_factorial_async(db_pool, n: int, username: str):
         result = 1
         for i in range(1, n + 1):
             result *= i
-        async with db_pool.connection() as conn:
-            async with conn.cursor() as cur: # Асинхронный курсор (требуется psycopg3)
-                await cur.execute(
-                    'INSERT INTO calculations (username, task, result) VALUES (%s, %s, %s)',
-                    (username, f"factorial of {n}", result)
+        async with db_pool.acquire() as conn:
+                await conn.execute(
+                    'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
+                    username, f"factorial of {n}", result
                 )
-                await conn.commit()
-            # Записывает успешное завершение.
-            logger.info(f"Успешно вычислен факториал {n} = {result}")
-            task_id = f"task_{n}_{username}"
-            await notify_completion(task_id, username, result)
+        # Записывает успешное завершение.
+        logger.info(f"Успешно вычислен факториал {n} = {result}")
+        task_id = f"task_{n}_{username}"
+        await notify_completion(task_id, username, result, db_pool)
     except Exception as e:
         logger.error(f"Ошибка при вычислении факториала {n}: {str(e)}")
-        await conn.rollback()
         raise # Передаём ошибку дальше для retry
 
 # Функция compute_sum_range, которая вычисляет сумму чисел в заданном диапазоне асинхронно.
@@ -56,18 +53,15 @@ async def compute_sum_range(db_pool, start: int, end: int, username: str):
         logger.info(f"Начало вычисления суммы от {start} до {end} для {username}")
         await asyncio.sleep(3) # Симуляция длительной задачи
         result = sum(range(start, end + 1))
-        async with db_pool.connection() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
+        async with db_pool.acquire() as conn: # Используем acquire для asyncpg
+                await conn.execute(
                     'INSERT INTO calculations (username, task, result) VALUES (%s, %s, %s)',
-                    (username, f"sum from {start} to {end}", result)
+                    username, f"sum from {start} to {end}", result
                 )
-                await conn.commit()
         logger.info(f"Успешно вычислена сумма от {start} до {end} = {result}")
         task_id = f"task_sum_{start}_{end}_{username}"
         await notify_completion(task_id, username, result, db_pool)
     except Exception as e:
         logger.error(f"Ошибка при вычислении суммы: {str(e)}")
-        await conn.rollback()
         # Передаёт исключение дальше, чтобы оно было обработано вызывающим кодом.
         raise
