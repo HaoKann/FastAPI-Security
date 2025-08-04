@@ -13,12 +13,7 @@ logger = logging.getLogger('main')
 # 1. Фоновые задачи (BackgroundTasks) — для тяжёлых вычислений
 # Функция для симуляции тяжёлых вычислений. Это пример задачи, которую можно выполнить в фоне.
 
-# Добавление уведомлений
-# Функцию для отправки уведомлений через WebSocket после завершения compute_factorial_async
-async def notify_completion(task_id: str, username: str, result: int):
-    await asyncio.sleep(2) # Короткая задержка для симуляции
-    from websocket import manager # Импорт здесь, чтобы избежать круговой зависимости
-    await manager.broadcast(f"Задача {task_id} для {username} завершена, результат: {result}")
+
 
 # Функция с повторными попытками
 # Декоратор, который пытается выполнить функцию до 3 раз с паузой 2 секунды между попытками, если возникает ошибка.
@@ -55,13 +50,21 @@ async def compute_sum_range(db_pool, start: int, end: int, username: str):
         result = sum(range(start, end + 1))
         async with db_pool.acquire() as conn: # Используем acquire для asyncpg
                 await conn.execute(
-                    'INSERT INTO calculations (username, task, result) VALUES (%s, %s, %s)',
+                    'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
                     username, f"sum from {start} to {end}", result
                 )
         logger.info(f"Успешно вычислена сумма от {start} до {end} = {result}")
         task_id = f"task_sum_{start}_{end}_{username}"
-        await notify_completion(task_id, username, result, db_pool)
+        await notify_completion(task_id, username, result)
     except Exception as e:
         logger.error(f"Ошибка при вычислении суммы: {str(e)}")
         # Передаёт исключение дальше, чтобы оно было обработано вызывающим кодом.
         raise
+
+
+# Добавление уведомлений
+# Функцию для отправки уведомлений через WebSocket после завершения compute_factorial_async
+async def notify_completion(task_id: str, username: str, result: int):
+    await asyncio.sleep(2) # Короткая задержка для симуляции
+    from websocket import manager # Импорт здесь, чтобы избежать круговой зависимости
+    await manager.broadcast(f"Задача {task_id} для {username} завершена, результат: {result}")

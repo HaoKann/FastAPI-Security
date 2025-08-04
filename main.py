@@ -1,7 +1,7 @@
 from datetime import timedelta
 from typing import Optional, List
  # BackgroundTasks добавляет поддержку фоновых задач.
-from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Query
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel
@@ -13,8 +13,9 @@ from starlette import status
 
 from database import get_password_hash, verify_password, get_user, get_db_pool
 from bg_tasks import compute_factorial_async, compute_sum_range
-from auth import create_tokens, get_current_user_dependency, oauth2_scheme
+from auth import create_tokens, get_current_user_dependency
 import os
+from websocket import manager, WebSocket, WebSocketDisconnect
 
 load_dotenv()
 
@@ -29,6 +30,12 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+
+# Настройка
+SECRET_KEY = os.getenv('SECRET_KEY')
+ALGORITHM = 'HS256'
+
+
 # Глобальная переменная для пула
 db_pool = None
 
@@ -41,6 +48,7 @@ async def startup_event():
     if db_pool is None:
         print("Warning: Failed to initialize DB Pool. Check database connection.")
 
+
 # Зависимость для получения db_pool
 async def get_db_pool_dependency():
     global db_pool
@@ -49,12 +57,22 @@ async def get_db_pool_dependency():
         print('DB Pool reinitialized in get_db:', db_pool is not None)
     return db_pool
 
-# Зависимость для текущего пользователя с передачей db_pool
-async def get_current_user_dependency_with_db(db_pool=Depends(get_db_pool_dependency)):
-    print("DB pool received:", db_pool)
-    current_user_func = get_current_user_dependency(db_pool)
-    return await current_user_func()  # FastAPI передаст токен через oauth2_scheme
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl='/token')
 
+# Зависимость для текущего пользователя с передачей db_pool
+# Упрощенная зависимость для текущего пользователя
+async def get_current_user_simple(token: str = Depends(oauth2_scheme), db_pool = Depends(get_db_pool_dependency)):
+   try: 
+       payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+       username = payload.get('sub')
+       if username is None or payload.get('type') != 'access':
+            raise HTTPException(status_code=401, detail='Invalid token')
+       user = await get_user(db_pool, username) 
+       if user is None:
+           raise HTTPException(status_code=401, detail='User not found')
+       return username
+   except JWTError:
+       raise HTTPException(status_code=401, detail='Invalid token')
 
 # Pydantic модели
 class Token(BaseModel):
@@ -87,6 +105,7 @@ async def register(user: UserCreate, background_tasks: BackgroundTasks = None):
     if await get_user(db_pool, user.username):
         raise HTTPException(status_code=400, detail='Пользователь уже существует')
     hashed_password = get_password_hash(user.password)
+    
     # Использует асинхронное соединение для записи.
     async with db_pool.acquire() as conn:
             async with conn.transaction():
@@ -135,18 +154,15 @@ async def refresh_token(refresh_token: str):
         raise HTTPException(status_code=400, detail='Неверный refresh токен')
     
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl='/token')
-
 # Защищенный эндпоинт для пользователя
-@app.get('/protected', dependencies=[Depends(oauth2_scheme)])
-async def protected_route(current_user: str = Depends(get_current_user_dependency_with_db)):
+@app.get('/protected')
+async def protected_route(current_user: str = Depends(get_current_user_simple)):
     return {'message': f'Привет, {current_user}! Это защищенная зона'}
-   
 
 # Защищённый эндпоинт, который возвращает список продуктов, принадлежащих текущему пользователю.
 @app.get('/products/', response_model=List[Product])
-async def get_products(current_user: str = Depends(get_current_user_dependency_with_db)):
-    async with (await get_db_pool_dependency()).acquire() as conn:
+async def get_products(current_user: str = Depends(get_current_user_simple), db_pool = Depends(get_db_pool_dependency)):
+    async with db_pool.acquire() as conn:
             try:
                 products = await conn.fetch(
                     "SELECT id, name, price, owner_username FROM products WHERE owner_username = $1",
@@ -169,8 +185,8 @@ async def get_products(current_user: str = Depends(get_current_user_dependency_w
 
 # Защищённый эндпоинт для создания нового продукта, доступный только авторизованным пользователям.
 @app.post('/products/', response_model=Product, tags=['Products'])
-async def create_product(name: str, price: float, background_tasks: BackgroundTasks, current_user: str = Depends(get_current_user_dependency_with_db)):
-    async with (await get_db_pool_dependency()).acquire() as conn:
+async def create_product(name: str, price: float, background_tasks: BackgroundTasks, current_user: str = Depends(get_current_user_simple), db_pool = Depends(get_current_user_dependency)):
+    async with db_pool.acquire() as conn:
             try:
                 result = await conn.fetchrow(
                     # RETURNING id, name, price, owner_username возвращает только что вставленные данные.
@@ -178,7 +194,11 @@ async def create_product(name: str, price: float, background_tasks: BackgroundTa
                     name, price, current_user
                 )
                 # ИСПРАВЛЕНО: Возвращаем Pydantic модель и отправляем JSON в broadcast
-                new_product = Product(id=result['id'], name=result['name'], price=result['price'], owner_username=result['owner_username'])
+                new_product = Product(id=result['id'], 
+                                      name=result['name'], 
+                                      price=result['price'], 
+                                      owner_username=result['owner_username']
+                                      )
                 background_tasks.add_task(manager.broadcast, f"Новый продукт: {new_product.json()}")
                 return new_product
             except Exception as e:
@@ -187,7 +207,7 @@ async def create_product(name: str, price: float, background_tasks: BackgroundTa
 
 # Эндпоинт для запуска вычисления суммы
 @app.post('/compute/sum')
-async def start_sum_computation(start: int, end: int, current_user: str = Depends(lambda: get_current_user_dependency(db_pool)), background_tasks: BackgroundTasks = None):
+async def start_sum_computation(start: int, end: int, current_user: str = Depends(get_current_user_simple), background_tasks: BackgroundTasks = None):
     if start > end:
         raise HTTPException(status_code=400, detail='Начало диапазона должно быть меньше или равно концу')
     # Проверка наличия объекта background_tasks
@@ -203,7 +223,7 @@ async def start_sum_computation(start: int, end: int, current_user: str = Depend
 # background_tasks: BackgroundTasks = None — объект для фоновых задач.
 # BackgroundTasks — это специальный класс из FastAPI, который позволяет запускать задачи асинхронно после отправки HTTP-ответа.
 # = None означает, что этот параметр необязательный. Если клиент не передаёт его явно (что обычно происходит), он будет None по умолчанию.
-async def start_async_computation(n: int, current_user: str = Depends(lambda: get_current_user_dependency(db_pool)), background_tasks: BackgroundTasks = None):
+async def start_async_computation(n: int, current_user: str = Depends(get_current_user_simple), background_tasks: BackgroundTasks = None):
     if n <= 0:
         raise HTTPException(status_code=400, detail='Число должно быть положительным')
     # проверяет, существует ли объект BackgroundTasks. Если он есть (например, передан в эндпоинт), задача добавляется в очередь фоновых задач. 
@@ -214,56 +234,6 @@ async def start_async_computation(n: int, current_user: str = Depends(lambda: ge
         background_tasks.add_task(compute_factorial_async, n, current_user, db_pool)
     return {'message': f'Асинхронные вычисления факториала {n} начато в фоне. Результат будет сохранен (максимум 3 попытки)'}
 
-
-
-
-
-# WebSocket-логика
-# WebSocket, WebSocketDisconnect — добавляет поддержку WebSocket-протокола и обработку разрыва соединения.
-from fastapi import WebSocket, WebSocketDisconnect, Query
-# starlette — это основа FastAPI, а status — набор кодов для HTTP и WebSocket.
-from starlette import status
-from typing import Optional
-from jose import JWTError, jwt
-from database import get_user
-import os
-
-# Настройка
-SECRET_KEY = os.getenv('SECRET_KEY')
-ALGORITHM = 'HS256'
-
-# 2. WebSocket подключения
-# Зачем: Позволяет организовать чат и уведомления.
-# ConnectionManager - определяет класс для управления WebSocket-подключениями (например, чат).
-class ConnectionManager:  
-    # Инициализирует объект класса при его создании.
-    def __init__(self):
-        self.active_connections: list[WebSocket] = [] # Создаёт пустой список для хранения всех активных WebSocket-соединений. 
-        # Тип list[WebSocket] указывает, что список содержит объекты типа WebSocket.
-
-    # connect: Принимает соединение, добавляет его в список
-    # Асинхронный метод для подключения нового клиента
-    async def connect(self, websocket: WebSocket):
-        # Принимает входящее WebSocket-соединение, устанавливая "рукопожатие" между клиентом и сервером.
-        await websocket.accept()
-        # Добавляет новое соединение в список активных
-        self.active_connections.append(websocket)
-
-    # disconnect: Удаляет соединение при разрыве.
-    def disconnect(self, websocket: WebSocket):
-        # Проверяет, есть ли соединение в списке, чтобы избежать ошибки при удалении.
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
-
-    # broadcast: Асинхронный метод для отправки сообщения всем подключённым клиентам.
-    async def broadcast(self, message: str):
-        # Проходит по всем активным соединениям.
-        for connection in self.active_connections:
-            # Отправляет текстовое сообщение каждому клиенту асинхронно.
-            await connection.send_text(message)
-
-# ConnectionManager управляет подключениями и рассылает сообщения
-manager = ConnectionManager()
 
 
 # Устанавливает WebSocket-соединение, проверяет токен и обрабатывает сообщения.
@@ -289,7 +259,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
 
         username = payload.get("sub")
         # Шаг 3: Проверяет, что username существует и пользователь найден в базе. Если нет, закрывает соединение.
-        if username is None or await get_user(username) is None:
+        if username is None or await get_user(db_pool, username) is None:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="User not found")
             return
         
@@ -332,7 +302,7 @@ async def websocket_chat(websocket: WebSocket, token: str = Query(...)):
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return 
         username = payload.get('sub')
-        if username is None or await get_user(username) is None:
+        if username is None or await get_user(db_pool, username) is None:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
     except JWTError:

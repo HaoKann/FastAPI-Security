@@ -1,7 +1,7 @@
 # WebSocket, WebSocketDisconnect — добавляет поддержку WebSocket-протокола и обработку разрыва соединения.
-from fastapi import WebSocket
-from typing import Optional, List
-
+from fastapi import WebSocket, WebSocketDisconnect, Query
+from starlette import status
+from jose import jwt
 
 
 # 2. WebSocket подключения
