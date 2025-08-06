@@ -1,73 +1,91 @@
-from jose import jwt
+# auth.py
 from datetime import datetime, timedelta
-from typing import Optional
-from fastapi import Depends, HTTPException
-from fastapi.security import OAuth2PasswordBearer
 import os
-from dotenv import load_dotenv
-from database import get_user
+import asyncpg
+from jose import jwt, JWTError
+from passlib.context import CryptContext
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from database import get_db_pool # Импортируем нашу зависимость для пула БД
 
-load_dotenv()
+# --- 1. Настройки и константы ---
 
-# Говорим FastAPI, что будем искать токен в заголовке: Authorization: Bearer <token>
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl='token')
+# Загружаем переменные из .env, предоставляя значения по умолчанию для безопасности
+SECRET_KEY = os.getenv('SECRET_KEY', 'a_very_secret_key_for_local_development')
+ALGORITHM = 'HS256'
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+REFRESH_TOKEN_EXPIRE_DAYS = 7
 
+# Создаем объекты один раз при загрузке модуля
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token") # Указываем путь к эндпоинту для получения токена
 
-# Генерация JWT токена
-async def create_tokens(db_pool, data: dict, secret_key: str, algorithm: str, expires_delta: Optional[timedelta] = None):
-    # Создаём копию данных для модификации
-    to_encode = data.copy()
+# --- 2. Утилиты для работы с паролями ---
 
-    # Преобразуем timedelta в timestamp (количество секунд с эпохи)
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-        to_encode.update({'exp': expire.timestamp()})
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Проверяет, соответствует ли обычный пароль хешированному."""
+    return pwd_context.verify(plain_password, hashed_password)
 
-    # Access Token
-    to_encode['type'] = 'access'
-    print("to_encode:", to_encode)
-    access_token = jwt.encode(to_encode, secret_key, algorithm=algorithm)
+def get_password_hash(password: str) -> str:
+    """Хеширует пароль."""
+    return pwd_context.hash(password)
+
+# --- 3. Функции для создания токенов ---
+# ИСПРАВЛЕНО: Эта функция теперь синхронная, так как создание токенов - быстрая операция.
+# Она больше не лезет в БД и использует datetime-объекты напрямую, что решает ошибку "Signature has expired".
+def create_tokens(data: dict) -> dict:
+    """Создает новую пару access и refresh токенов."""
     
-    # Refresh Token
-    to_encode['type'] = 'refresh'
-    to_encode.pop('exp', None)
-    to_encode.update({'exp':(datetime.utcnow() + timedelta(days=int(os.getenv('REFRESH_TOKEN_EXPIRE_DAYS', 7)))).timestamp()})
-    refresh_token = jwt.encode(to_encode, secret_key, algorithm=algorithm)
+    # Создаем access token
+    to_encode_access = data.copy()
+    expire_access = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode_access.update({"exp": expire_access, "type": "access"})
+    access_token = jwt.encode(to_encode_access, SECRET_KEY, algorithm=ALGORITHM)
 
-    # Сохранение refresh-токена в базе 
-    async with db_pool.acquire() as conn: # Асинхронно берет соединение с базой данных из пула (db_pool), как ключ от машины, чтобы выполнить запрос.
-            try:
-                refresh_expire = datetime.utcnow() + timedelta(days=int(os.getenv('REFRESH_TOKEN_EXPIRE_DAYS', 7)))
-                await conn.execute(
-                        "INSERT INTO refresh_tokens (username, refresh_token, expiry) VALUES ($1, $2, $3)",
-                        data['sub'], refresh_token, refresh_expire
-                    )
-            # Ловит любые ошибки (например, если таблица не существует или данные некорректны).
-            except Exception as e:
-                # Откатывает изменения, если произошла ошибка, чтобы база осталась в прежнем состоянии.
-                raise HTTPException(status_code=500, detail=f"Ошибка сохранения refresh-токена: {str(e)}")
-            return {
-                'access_token': access_token,
-                'refresh_token': refresh_token,
-                'token_type': 'bearer'
-            }
+    # Создаем refresh token
+    to_encode_refresh = data.copy()
+    expire_refresh = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    to_encode_refresh.update({"exp": expire_refresh, "type": "refresh"})
+    refresh_token = jwt.encode(to_encode_refresh, SECRET_KEY, algorithm=ALGORITHM)
+    
+    return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
 
-# Защищённый эндпоинт для просмотра продуктов  
-# Функция для извлечения имени пользователя из токена. Использует Depends(oauth2_scheme) для автоматической проверки токена(авторизации юзера)
-def get_current_user_dependency(db_pool):
-    async def get_current_user(token: str = Depends(oauth2_scheme)):
-        try:
-            print('Decoding token with SECRET_KEY:', os.getenv('SECRET_KEY'), 'and ALGORITHM:', os.getenv('ALGORITHM', 'HS256'))
-            payload = jwt.decode(token, os.getenv('SECRET_KEY'), algorithms=[os.getenv('ALGORITHM', 'HS256')])
-            username: str = payload.get('sub')
-            print('Decoded username:', username)
-            if username is None:
-                raise HTTPException(status_code=401, detail='Invalid authentication credentials')
-            user = await get_user(db_pool, username)
-            print('User from DB:', user)
-            if user is None:
-                raise HTTPException(status_code=401, detail='Invalid authentication credentials')
-            return username
-        except jwt.JWTError:
-            raise HTTPException(status_code=401, detail='Invalid authentication credentials')
-    return get_current_user
+# --- 4. Зависимость для получения текущего пользователя ---
+# ИСПРАВЛЕНО: Это теперь единственная и простая зависимость для проверки пользователя.
+# Она напрямую запрашивает у FastAPI токен и пул соединений с БД.
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    pool: asyncpg.Pool = Depends(get_db_pool)
+) -> dict:
+    """
+    Декодирует токен, проверяет его валидность и возвращает данные пользователя из БД.
+    Используется как зависимость в защищенных эндпоинтах.
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        
+        # Проверяем, что это именно access токен
+        if payload.get("type") != "access":
+            raise credentials_exception
+        
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+
+        # Получаем пользователя из БД, чтобы убедиться, что он все еще существует
+        async with pool.acquire() as conn:
+            user = await conn.fetchrow("SELECT username, hashed_password FROM users WHERE username = $1", username)
+        
+        if user is None:
+            raise credentials_exception
+            
+        # Возвращаем пользователя в виде словаря
+        return dict(user)
+    except JWTError:
+        # Эта ошибка возникает, если токен просрочен или подпись неверна
+        raise credentials_exception

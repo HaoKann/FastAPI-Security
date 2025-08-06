@@ -13,7 +13,7 @@ from starlette import status
 
 from database import get_password_hash, verify_password, get_user, get_db_pool
 from bg_tasks import compute_factorial_async, compute_sum_range
-from auth import create_tokens, get_current_user_dependency
+from auth import create_tokens, get_current_user
 import os
 from websocket import manager, WebSocket, WebSocketDisconnect
 
@@ -62,17 +62,30 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl='/token')
 # Зависимость для текущего пользователя с передачей db_pool
 # Упрощенная зависимость для текущего пользователя
 async def get_current_user_simple(token: str = Depends(oauth2_scheme), db_pool = Depends(get_db_pool_dependency)):
-   try: 
-       payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-       username = payload.get('sub')
-       if username is None or payload.get('type') != 'access':
+    print('Token recieved from Depends:', token)
+    print('Raw Authorization header:', oauth2_scheme.__dict__.get('header', 'Not found'))
+    print('SECRET_KEY:', SECRET_KEY)
+    print('ALGORITHM:', ALGORITHM)
+    try: 
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        print('Decoded payload:', payload)
+        username = payload.get('sub')
+        if username is None or payload.get('type') != 'access':
+            print('Invalid token structure:', {'sub': username, 'type': payload.get('type')})
             raise HTTPException(status_code=401, detail='Invalid token')
-       user = await get_user(db_pool, username) 
-       if user is None:
-           raise HTTPException(status_code=401, detail='User not found')
-       return username
-   except JWTError:
-       raise HTTPException(status_code=401, detail='Invalid token')
+        user = await get_user(db_pool, username) 
+        print('User from DB:', user)
+        if user is None:
+            print('User not found in DB for username:', username)
+            raise HTTPException(status_code=401, detail='User not found')
+        return username
+    except JWTError as e:
+        print('JWTError:', str(e))
+        raise HTTPException(status_code=401, detail='Invalid token')
+    except Exception as e:
+        print('Unexpected error:', str(e))
+        raise HTTPException(status_code=500, detail='Internal server error')
+
 
 # Pydantic модели
 class Token(BaseModel):
@@ -185,7 +198,7 @@ async def get_products(current_user: str = Depends(get_current_user_simple), db_
 
 # Защищённый эндпоинт для создания нового продукта, доступный только авторизованным пользователям.
 @app.post('/products/', response_model=Product, tags=['Products'])
-async def create_product(name: str, price: float, background_tasks: BackgroundTasks, current_user: str = Depends(get_current_user_simple), db_pool = Depends(get_current_user_dependency)):
+async def create_product(name: str, price: float, background_tasks: BackgroundTasks, current_user: str = Depends(get_current_user_simple), db_pool = Depends(get_db_pool_dependency)):
     async with db_pool.acquire() as conn:
             try:
                 result = await conn.fetchrow(
