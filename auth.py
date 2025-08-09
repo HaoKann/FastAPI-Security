@@ -6,7 +6,8 @@ from jose import jwt, JWTError
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from database import get_db_pool # Импортируем нашу зависимость для пула БД
+from database import get_pool # Импортируем нашу зависимость для пула БД
+
 
 # --- 1. Настройки и константы ---
 
@@ -19,6 +20,7 @@ REFRESH_TOKEN_EXPIRE_DAYS = 7
 # Создаем объекты один раз при загрузке модуля
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token") # Указываем путь к эндпоинту для получения токена
+
 
 # --- 2. Утилиты для работы с паролями ---
 
@@ -54,13 +56,9 @@ def create_tokens(data: dict) -> dict:
 # ИСПРАВЛЕНО: Это теперь единственная и простая зависимость для проверки пользователя.
 # Она напрямую запрашивает у FastAPI токен и пул соединений с БД.
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    pool: asyncpg.Pool = Depends(get_db_pool)
-) -> dict:
-    """
-    Декодирует токен, проверяет его валидность и возвращает данные пользователя из БД.
-    Используется как зависимость в защищенных эндпоинтах.
-    """
+    token: str = Depends(oauth2_scheme), pool: asyncpg.Pool = Depends(get_pool)) -> dict:
+    # Декодирует токен, проверяет его валидность и возвращает данные пользователя из БД.
+    # Используется как зависимость в защищенных эндпоинтах.
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",

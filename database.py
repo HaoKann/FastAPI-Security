@@ -1,44 +1,39 @@
+# Управление соединением с базой данных.
+
 import asyncpg
-from passlib.context import CryptContext
-from typing import Optional
+from fastapi import Request
 import os
 
-# Хэширование паролей 
-# Утилиты для аутентификации 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-async def get_db_pool():
-    return await asyncpg.create_pool(
+# Эта функция будет вызываться один раз при старте приложения
+async def connect_to_db(app):
+    # Создает пул соединений и сохраняет его для хранения общих ресурсов
+    # app.state - специальный объект для хранения общих ресурсов
+    print('Connecting to database...')
+    app.state.pool = await asyncpg.create_pool(
         host=os.getenv('DB_HOST', 'localhost'),
         port=int(os.getenv('DB_PORT', 5432)),
         database=os.getenv('DB_NAME', 'fastapi_auth'),
         user=os.getenv('DB_USER', 'postgres'),
-        password=os.getenv('DB_PASSWORD', '123456789')
+        password=os.getenv('DB_PASSWORD', '123456789'),
+        min_size=1,
+        max_size=20
     )
+    print('Database connection pool created successfully')
+
+# Эта функция будет вызываться 1 раз при остановке приложения
+async def close_db_connection(app):
+    # Закрывает пул соединений при остановке приложений
+    print('Closing database connection pool...')
+    await app.state.pool.close()
+    print('Database connection pool closed')
+
+# Это зависимость (Dependency)
+# Любой эндпоинт сможет запросить её для получания доступа к пулу
+def get_pool(request: Request) -> asyncpg.Pool:
+    # Зависимость для получения пула соединений в эндпоинтах.
+    # FastAPI автоматически передаст сюда объект 'request', из которого можно получить доступ к app.state.pool
+    return request.app.state.pool
 
 
-# Функция для получения пользователя
-async def get_user(db_pool, username: str) -> Optional[dict]:
-    # Конструкция async with гарантирует, что соединение будет корректно возвращено в пул после завершения блока, 
-    # даже если возникнет ошибка.
-    # Получает соединение с базой данных из пула подключений (db_pool).
-    # db_pool.acquire() асинхронно берёт соединение из пула
-    async with db_pool.acquire() as conn:
-        # fetchrow() выполняет запрос и возвращает одну строку как словарь, что упрощает доступ к данным (user["username"] вместо user[0]).
-        # $1 как параметр вместо %s по синтаксису asyncpg, заменяемый значением username
-        # Это безопасный способ передачи данных, защищающий от SQL-инъекций (в отличие от ручного подстановления строк).
-        user = await conn.fetchrow("SELECT username, hashed_password FROM users WHERE username = $1", username)
-        if user:
-            return {'username': user['username'], 'hashed_password': user['hashed_password']}
-        return None
-        
 
-# Хэширует пароль с помощью bcrypt для безопасного хранения.
-def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
 
-# Функции для работы с паролями
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
-
-__all__ = ['get_db_pool', 'get_user', 'get_password_hash', 'verify_password']
