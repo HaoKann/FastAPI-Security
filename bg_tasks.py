@@ -1,24 +1,49 @@
+# BackgroundTasks позволяет запускать тяжёлые задачи (как факториал) в фоне, не блокируя клиента.
+# 1. Фоновые задачи (BackgroundTasks) — для тяжёлых вычислений
+
+
+
 # tenacity для настройки повторных попыток задач при сбоях.
 from tenacity import retry, stop_after_attempt, wait_fixed
 # Поддержка асинхронного программирования для не блокирующих операций.
 import asyncio
 # Модуль Python для записи логов (отладка, ошибки, информация).
 import logging
+import asyncpg
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status
+from auth import get_current_user
+from database import get_pool
+# Импортируем manager из websocket.py, чтобы отправлять уведомления
+# Это безопасно, так как websocket.py не импортирует ничего из bg_tasks.py
+from websocket import manager
+
+# Получаем логгер. __name__ автоматически подставит "bg_tasks"
+logger = logging.getLogger(__name__)
 
 
-logger = logging.getLogger('main')
+# Создаем APIRouter. Все эндпоинты в этом файле будут привязаны к нему.
+router = APIRouter(
+    prefix='/compute', # Все пути будут начинаться с /compute
+    tags=['Background Tasks'], # Группировка в документации
+    dependencies=[Depends(get_current_user)] # Все эндпоинты здесь требуют авторизации
+)
+
+# --- Утилиты ---
+# Добавление уведомлений
+# Функцию для отправки уведомлений через WebSocket после завершения фоновых задач 
+async def notify_completion(username: str, result: int, task_name: str):
+    await asyncio.sleep(1) # Короткая задержка для симуляции
+    await manager.broadcast(f"Уведомление для {username}: Задача {task_name} завершена! Результат: {result}")
 
 
-# BackgroundTasks позволяет запускать тяжёлые задачи (как факториал) в фоне, не блокируя клиента.
-# 1. Фоновые задачи (BackgroundTasks) — для тяжёлых вычислений
+# --- Логика фоновых задач ---
+
 # Функция для симуляции тяжёлых вычислений. Это пример задачи, которую можно выполнить в фоне.
-
-
-
 # Функция с повторными попытками
 # Декоратор, который пытается выполнить функцию до 3 раз с паузой 2 секунды между попытками, если возникает ошибка.
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2)) 
-async def compute_factorial_async(db_pool, n: int, username: str):
+async def compute_factorial_task(pool: asyncpg.Pool, n: int, username: str, background_tasks: BackgroundTasks):
+    """Асинхронно вычисляет факториал и сохраняет результат в БД."""
     try:
         # Записывает начало задачи в лог
         logger.info(f"Начало вычисление факториала {n} для {username}")
@@ -26,15 +51,15 @@ async def compute_factorial_async(db_pool, n: int, username: str):
         result = 1
         for i in range(1, n + 1):
             result *= i
-        async with db_pool.acquire() as conn:
+
+        async with pool.acquire() as conn:
                 await conn.execute(
                     'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
-                    username, f"factorial of {n}", result
+                    username, f"factorial of {n}", str(result)
                 )
         # Записывает успешное завершение.
         logger.info(f"Успешно вычислен факториал {n} = {result}")
-        task_id = f"task_{n}_{username}"
-        await notify_completion(task_id, username, result, db_pool)
+        background_tasks.add_task(notify_completion, username, result, f'Факториал {n}')
     except Exception as e:
         logger.error(f"Ошибка при вычислении факториала {n}: {str(e)}")
         raise # Передаём ошибку дальше для retry
@@ -43,28 +68,56 @@ async def compute_factorial_async(db_pool, n: int, username: str):
 # @retry - декоратор из библиотеки tenacity, который позволяет повторить выполнение функции до 3 раз с интервалом 2 секунды, 
 # если она завершится с ошибкой. Это полезно для обработки временных сбоев (например, с базой данных).
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
-async def compute_sum_range(db_pool, start: int, end: int, username: str):
+async def compute_sum_range_task(pool: asyncpg.Pool, start: int, end: int, username: str, background_tasks: BackgroundTasks):
+    """Асинхронно вычисляет сумму в диапазоне и сохраняет результат."""
     try:
         logger.info(f"Начало вычисления суммы от {start} до {end} для {username}")
         await asyncio.sleep(3) # Симуляция длительной задачи
         result = sum(range(start, end + 1))
-        async with db_pool.acquire() as conn: # Используем acquire для asyncpg
+
+        async with pool.acquire() as conn: # Используем acquire для asyncpg
                 await conn.execute(
                     'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
-                    username, f"sum from {start} to {end}", result
+                    username, f"sum from {start} to {end}", str(result)
                 )
         logger.info(f"Успешно вычислена сумма от {start} до {end} = {result}")
-        task_id = f"task_sum_{start}_{end}_{username}"
-        await notify_completion(task_id, username, result)
+        background_tasks.add_task(notify_completion, username, result, f'Сумма от {start} до {end}' )
     except Exception as e:
         logger.error(f"Ошибка при вычислении суммы: {str(e)}")
         # Передаёт исключение дальше, чтобы оно было обработано вызывающим кодом.
         raise
 
 
-# Добавление уведомлений
-# Функцию для отправки уведомлений через WebSocket после завершения compute_factorial_async
-async def notify_completion(task_id: str, username: str, result: int):
-    await asyncio.sleep(2) # Короткая задержка для симуляции
-    from websocket import manager # Импорт здесь, чтобы избежать круговой зависимости
-    await manager.broadcast(f"Задача {task_id} для {username} завершена, результат: {result}")
+# --- Эндпоинты ---
+
+@router.post('/factorial')
+async def start_factorial_computation(
+    n: int,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_pool)
+):
+    """Запускает вычисление факториала в фоновом режиме."""
+    if n <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Число должно быть положительным')
+    
+    username = current_user['username']
+    # Передаем пул в фоновую задачу как обычный аргумент
+    background_tasks.add_task(compute_factorial_task, pool, n, username, background_tasks)
+    return {'message': f'Вычисление факториала {n} начато в фоне'}
+
+@router.post('/sum')
+async def start_sum_computation(
+    start: int, 
+    end: int, 
+    background_tasks: BackgroundTasks, 
+    current_user: dict = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_pool)
+):
+    """Запускает вычисление суммы в диапазоне в фоновом режиме."""
+    if start > end:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Начало диапозона не может быть больше конца')
+    
+    username = current_user['username']
+    background_tasks.add_task(compute_sum_range_task, pool, start, end, username, background_tasks)
+    return {'message': f'Вычисление суммы от {start} до {end} начато в фоне'}

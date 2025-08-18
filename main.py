@@ -11,7 +11,7 @@ import logging
 # starlette — это основа FastAPI, а status — набор кодов для HTTP и WebSocket.
 from starlette import status
 
-from database import get_password_hash, verify_password, get_user, get_db_pool
+from database import connect_to_db, get_pool, close_db_connection 
 from bg_tasks import compute_factorial_async, compute_sum_range
 from auth import create_tokens, get_current_user
 import os
