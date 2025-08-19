@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 # Создаем APIRouter. Все эндпоинты в этом файле будут привязаны к нему.
+# APIRouter это как локальный 'удлинитель' к которму будут подключены все эндпоинты
 router = APIRouter(
     prefix='/compute', # Все пути будут начинаться с /compute
     tags=['Background Tasks'], # Группировка в документации
@@ -88,7 +89,7 @@ async def compute_sum_range_task(pool: asyncpg.Pool, start: int, end: int, usern
         raise
 
 
-# --- Эндпоинты ---
+#  Эндпоинты подключенные к 'удлинителю' APIRouter
 
 @router.post('/factorial')
 async def start_factorial_computation(

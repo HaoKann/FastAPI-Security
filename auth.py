@@ -52,6 +52,15 @@ def create_tokens(data: dict) -> dict:
     
     return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
 
+
+# --- НОВАЯ ФУНКЦИЯ-ПОМОЩНИК ---
+async def get_user_from_db(pool: asyncpg.Pool, username: str) -> dict | None:
+    # --- НОВАЯ ФУНКЦИЯ-ПОМОЩНИК ---
+    async with pool.acquire() as conn:
+        user = await conn.fetchrow('SELECT username, hashed_password FROM users WHERE username = $1 ', username)
+    return dict(user) if user else None
+
+
 # --- 4. Зависимость для получения текущего пользователя ---
 # ИСПРАВЛЕНО: Это теперь единственная и простая зависимость для проверки пользователя.
 # Она напрямую запрашивает у FastAPI токен и пул соединений с БД.
