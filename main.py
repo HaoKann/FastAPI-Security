@@ -1,28 +1,32 @@
+import asyncio
 from datetime import timedelta
 from typing import Optional, List
  # BackgroundTasks добавляет поддержку фоновых задач.
-from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Query
+from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Query, status, WebSocket, WebSocketDisconnect
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel
 from dotenv import load_dotenv
 # Модуль Python для записи логов (отладка, ошибки, информация).
 import logging
-# starlette — это основа FastAPI, а status — набор кодов для HTTP и WebSocket.
-from starlette import status
-
-from database import connect_to_db, get_pool, close_db_connection 
-from bg_tasks import compute_factorial_async, compute_sum_range
-from auth import create_tokens, get_current_user
+from psycopg_pool import AsyncConnectionPool
+from passlib.context import CryptContext
+from starlette.status import WS_1008_POLICY_VIOLATION
+from tenacity import retry, stop_after_attempt, wait_fixed
 import os
-from websocket import manager, WebSocket, WebSocketDisconnect
+from time import datetime
+
+# --- 1. НАСТРОЙКИ И ИНИЦИАЛИЗАЦИЯ ---
 
 load_dotenv()
 
 # Настройки логирования
 # Базовая конфигурация логирования
 # Уровень INFO означает, что будут записываться информационные сообщения и выше (например, ошибки).
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 # Создаёт логгер, привязанный к текущему модулю (__name__ — имя файла, например, main). 
 # Это позволяет разделять логи по модулям.
 logger = logging.getLogger(__name__)
@@ -30,64 +34,26 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+# Настройки подключения к БД
+DB_CONNINFO = (f"host={os.getenv('DB_HOST')} port={os.getenv('DB_PORT')} "
+               f"dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} "
+               f"password={os.getenv('DB_PASSWORD')}")
 
-# Настройка
+# Настройки JWT
 SECRET_KEY = os.getenv('SECRET_KEY')
 ALGORITHM = 'HS256'
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 
-# Глобальная переменная для пула
-db_pool = None
-
-# Инициализация пула соединений при старте приложения
-@app.on_event('startup')
-async def startup_event():
-    global db_pool
-    db_pool = await get_db_pool()
-    print('DB pool initialized:', db_pool is not None)
-    if db_pool is None:
-        print("Warning: Failed to initialize DB Pool. Check database connection.")
+# Инициализация приложения и пула соединений
+app = FastAPI(title='Advanced FastAPI App')
+db_pool = AsyncConnectionPool(conninfo=DB_CONNINFO, min_size=1, max_size=20)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl='token')
 
 
-# Зависимость для получения db_pool
-async def get_db_pool_dependency():
-    global db_pool
-    if db_pool is None:
-        db_pool = await get_db_pool()
-        print('DB Pool reinitialized in get_db:', db_pool is not None)
-    return db_pool
+# --- 2. МОДЕЛИ ДАННЫХ (PYDANTIC) ---
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl='/token')
-
-# Зависимость для текущего пользователя с передачей db_pool
-# Упрощенная зависимость для текущего пользователя
-async def get_current_user_simple(token: str = Depends(oauth2_scheme), db_pool = Depends(get_db_pool_dependency)):
-    print('Token recieved from Depends:', token)
-    print('Raw Authorization header:', oauth2_scheme.__dict__.get('header', 'Not found'))
-    print('SECRET_KEY:', SECRET_KEY)
-    print('ALGORITHM:', ALGORITHM)
-    try: 
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        print('Decoded payload:', payload)
-        username = payload.get('sub')
-        if username is None or payload.get('type') != 'access':
-            print('Invalid token structure:', {'sub': username, 'type': payload.get('type')})
-            raise HTTPException(status_code=401, detail='Invalid token')
-        user = await get_user(db_pool, username) 
-        print('User from DB:', user)
-        if user is None:
-            print('User not found in DB for username:', username)
-            raise HTTPException(status_code=401, detail='User not found')
-        return username
-    except JWTError as e:
-        print('JWTError:', str(e))
-        raise HTTPException(status_code=401, detail='Invalid token')
-    except Exception as e:
-        print('Unexpected error:', str(e))
-        raise HTTPException(status_code=500, detail='Internal server error')
-
-
-# Pydantic модели
 class Token(BaseModel):
     access_token: str
     refresh_token: str
@@ -107,18 +73,130 @@ class UserCreate(BaseModel):
     password: str
 
 
+# --- 3. УТИЛИТЫ И РАБОТА С БД ---
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Проверяет, соответствует ли обычный пароль хешированному."""
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password: str) -> str:
+    """Хеширует пароль."""
+    return pwd_context.hash(password)
+
+async def get_user(username: str) -> str:
+    async with db_pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute('SELECT username, hashed_password FROM users WHERE username = %s', (username,))
+            user = await cur.fetchone
+            if user:
+                return {'username': user[0], 'hashed_password': user[1]}
+            return None
+
+def create_tokens(data: dict) -> dict:
+    """Создает новую пару access и refresh токенов."""
+    # Создаем access token
+    access_expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_payload = {**data, 'exp': access_expire, 'type': 'access'}
+    access_token = jwt.encode(access_payload, SECRET_KEY, algorithm=ALGORITHM)
+
+    # Создаем refresh token
+    refresh_expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    refresh_payload = {**data, "exp": refresh_expire, "type": "refresh"}
+    refresh_token = jwt.encode(refresh_payload, SECRET_KEY, algorithm=ALGORITHM)
+    
+    return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"} 
+
+
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
+    # Декодирует токен, проверяет его валидность и возвращает данные пользователя из БД.
+    # Используется как зависимость в защищенных эндпоинтах.
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        
+        # Проверяем, что это именно access токен
+        if payload.get("type") != "access":
+            raise credentials_exception
+        
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+
+        user = await get_user(username)
+        if user is None:
+            raise credentials_exception
+        return user['username']
+    except JWTError:
+        # Эта ошибка возникает, если токен просрочен или подпись неверна
+        raise credentials_exception
+
+
+# --- 4. МЕНЕДЖЕР WEBSOCKET ---
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: str):
+        for connection in self.active_connections:
+            await connection.send_text(message)
+
+manager = ConnectionManager()
+
+
+# --- 5. ФОНОВЫЕ ЗАДАЧИ ---
+async def notify_completion(username: str, result: int, task_name: str):
+    await asyncio.sleep(1)
+    await manager.broadcast(f"Уведомление для {username}: Задача '{task_name}' завершена! Результат: {result}")
+
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
+async def compute_factorial_async(n: int, username: str, background_tasks: BackgroundTasks):
+    try:
+        logger.info(f"Начато вычисление факториала {n} для {username}.")
+        await asyncio.sleep(5)
+        result = 1
+        for i in range(1, n + 1):
+            result *= i
+        
+        async with db_pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(
+                "INSERT INTO calculations (username, task, result) VALUES (%s, %s, %s)",
+                (username, f"factorial of {n}", str(result))
+            )
+        logger.info(f"Успешно вычислен факториал {n} = {result}")
+        background_tasks.add_task(notify_completion, username, result, f"Факториал {n}")
+    except Exception as e:
+        logger.error(f"Ошибка при вычислении факториала {n}: {e}")
+        raise
+
+
+
+# --- 6. ЭНДПОИНТЫ API ---
 
 # Эндпоинт для регистрации
 # Принимает данные пользователя, проверяет, не существует ли такой username, хэширует пароль и сохраняет в users. 
 # Затем выдаёт токены.
-@app.post('/register', response_model=Token)
+@app.post('/register', response_model=Token, tags=['Authentication'])
 # user: UserCreate — объект, созданный из JSON-запроса (например, {"username": "alice", "password": "password123"}).
-async def register(user: UserCreate, background_tasks: BackgroundTasks = None):
+async def register(user: UserCreate):
     # Асинхронно проверяет наличие пользователя.
-    if await get_user(db_pool, user.username):
+    if await get_user(user.username):
         raise HTTPException(status_code=400, detail='Пользователь уже существует')
-    hashed_password = get_password_hash(user.password)
     
+    hashed_password = get_password_hash(user.password)
     # Использует асинхронное соединение для записи.
     async with db_pool.acquire() as conn:
             async with conn.transaction():
@@ -133,7 +211,7 @@ async def register(user: UserCreate, background_tasks: BackgroundTasks = None):
                                 )
 
 # Эндпоинт для получения токена
-@app.post("/token", response_model=Token)
+@app.post("/login", response_model=Token)
 async def login_for_token(form_data: OAuth2PasswordRequestForm = Depends()):
     user = await get_user(db_pool, form_data.username)
     if not user or not verify_password(form_data.password, user["hashed_password"]):
