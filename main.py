@@ -14,7 +14,7 @@ from passlib.context import CryptContext
 from starlette.status import WS_1008_POLICY_VIOLATION
 from tenacity import retry, stop_after_attempt, wait_fixed
 import os
-from time import datetime
+import datetime
 
 # --- 1. НАСТРОЙКИ И ИНИЦИАЛИЗАЦИЯ ---
 
@@ -186,46 +186,6 @@ async def compute_factorial_async(n: int, username: str, background_tasks: Backg
 
 # --- 6. ЭНДПОИНТЫ API ---
 
-# Эндпоинт для регистрации
-# Принимает данные пользователя, проверяет, не существует ли такой username, хэширует пароль и сохраняет в users. 
-# Затем выдаёт токены.
-@app.post('/register', response_model=Token, tags=['Authentication'])
-# user: UserCreate — объект, созданный из JSON-запроса (например, {"username": "alice", "password": "password123"}).
-async def register(user: UserCreate):
-    # Асинхронно проверяет наличие пользователя.
-    if await get_user(user.username):
-        raise HTTPException(status_code=400, detail='Пользователь уже существует')
-    
-    hashed_password = get_password_hash(user.password)
-    # Использует асинхронное соединение для записи.
-    async with db_pool.acquire() as conn:
-            async with conn.transaction():
-                await conn.execute(
-                'INSERT INTO users (username, hashed_password) VALUES ($1, $2)',
-                user.username, hashed_password
-            ) # Изменения фиксируются автоматически при выходе из блока, если нет ошибок
-            return await create_tokens(db_pool, 
-                                data={'sub': user.username}, 
-                                secret_key=os.getenv('SECRET_KEY'), 
-                                algorithm=os.getenv('ALGORITHM', 'HS256')
-                                )
-
-# Эндпоинт для получения токена
-@app.post("/login", response_model=Token)
-async def login_for_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = await get_user(db_pool, form_data.username)
-    if not user or not verify_password(form_data.password, user["hashed_password"]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Неверный логин или пароль",
-        )
-    return await create_tokens(
-        db_pool,
-        data={"sub": user["username"]},
-        secret_key=os.getenv('SECRET_KEY'),
-        algorithm=os.getenv('ALGORITHM', 'HS256'),
-        expires_delta=timedelta(minutes=int(os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES', 30)))
-    )
 
 # Эндпоинт для обновления токенов
 @app.post("/refresh", response_model=Token)
