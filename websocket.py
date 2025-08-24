@@ -3,8 +3,6 @@ from fastapi import WebSocket, WebSocketDisconnect, APIRouter, Depends, Query, s
 from typing import Optional
 import asyncpg
 from jose import jwt, JWTError
-
-
 from auth import SECRET_KEY, ALGORITHM, get_user_from_db
 from database import get_pool
 
@@ -130,3 +128,58 @@ async def websocket_chat(
     except WebSocketDisconnect:
         await manager.disconnect(websocket)
         await manager.broadcast(f'Клиент {username} покинул чат') 
+
+
+            
+# Устанавливает WebSocket-соединение, проверяет токен и обрабатывает сообщения.
+# Зачем: Создаёт чат и уведомления в реальном времени.
+# @app.websocket(WebSocket-роут) нужен для создания постоянного соединения
+# Создан для уведомлений о завершении фоновых задач (например, compute_factorial_async или compute_sum_range)
+@router.websocket("/ws/products")
+# websocket: WebSocket — объект соединения
+# token: str = Query(...) — токен авторизации, переданный как параметр запроса (обязательный, так как ... указывает на это).
+async def websocket_products(websocket: WebSocket, token: str = Query(...), pool: asyncpg.Pool = Depends(get_pool) ):
+    # Объявляет переменную username, которая может быть None (опциональный тип), для хранения имени пользователя
+    username: Optional[str] = None
+    try:
+        # Шаг 1: Декодируем токен
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        
+        # Шаг 2: Проверяем тип токена (должен быть access)
+        if payload.get("type") != "access":
+            # Закрывает соединение с кодом ошибки 1008 (нарушение политики) и сообщением.
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token type")
+            # Прерывает выполнение функции при ошибке
+            return
+
+        username = payload.get("sub")
+        # Шаг 3: Проверяет, что username существует и пользователь найден в базе. Если нет, закрывает соединение.
+        if username is None or await get_user_from_db (pool, username) is None:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="User not found")
+            return
+        
+    # Ловит ошибки декодирования токена (например, истёкший или неверный токен).
+    except JWTError:
+        # Если токен невалидный или просрочен
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token")
+        return
+
+    # Если все проверки пройдены, подключаем пользователя
+    # Подключает клиента через manager
+    await manager.connect(websocket)
+    # Уведомляет всех подключённых клиентов о новом пользователе.
+    await manager.broadcast(f"Клиент '{username}' присоединился к чату.")
+    # Начинает блок для обработки сообщений, где может произойти разрыв соединения.
+    try:
+        # Ожидаем сообщения
+        while True:
+            # Асинхронно получает текстовое сообщение от клиента.
+            data = await websocket.receive_text()
+            # Рассылает полученное сообщение всем клиентам с именем отправителя.
+            await manager.broadcast(f"{username}: {data}")
+    # Ловит событие разрыва соединения.
+    except WebSocketDisconnect:
+        # Удаляет клиента из списка активных соединений.
+        manager.disconnect(websocket)
+        await manager.broadcast(f"Клиент '{username}' покинул чат.")
+

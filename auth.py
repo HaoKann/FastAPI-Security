@@ -71,7 +71,6 @@ def create_tokens(data: dict) -> dict:
 
 # --- НОВАЯ ФУНКЦИЯ-ПОМОЩНИК ---
 async def get_user_from_db(pool: asyncpg.Pool, username: str) -> dict | None:
-    # --- НОВАЯ ФУНКЦИЯ-ПОМОЩНИК ---
     async with pool.acquire() as conn:
         user = await conn.fetchrow('SELECT username, hashed_password FROM users WHERE username = $1 ', username)
     return dict(user) if user else None
@@ -116,6 +115,8 @@ async def get_current_user(
 
 # --- 5. НОВЫЙ БЛОК: Эндпоинты, перенесенные из main.py ---
 
+
+
 # Эндпоинт для регистрации
 # Принимает данные пользователя, проверяет, не существует ли такой username, хэширует пароль и сохраняет в users. 
 # Затем выдаёт токены.
@@ -153,6 +154,14 @@ async def login_for_token(form_data: OAuth2PasswordRequestForm = Depends(), pool
 
 @router.get('/me', summary='Get current user info')
 async def read_users_me(current_user: dict = Depends(get_current_user)):
-    """Возвращает информацию о текущем пользователе (без хеша пароля)."""
+    """Возвращает информацию про текущего пользовател (без хеша пароля)."""
     user_info = current_user.copy()
     user_info.pop('hashed_password', None)
+
+
+# Защищенный эндпоинт для пользователя
+@router.get('/protected')
+async def protected_route(current_user: dict = Depends(get_current_user)):
+    # Мы ожидаем словарь (dict) и берем из него имя пользователя
+    username = current_user['username']
+    return {'message': f'Привет, {username}! Это защищенная зона'}

@@ -1,8 +1,5 @@
 # BackgroundTasks позволяет запускать тяжёлые задачи (как факториал) в фоне, не блокируя клиента.
 # 1. Фоновые задачи (BackgroundTasks) — для тяжёлых вычислений
-
-
-
 # tenacity для настройки повторных попыток задач при сбоях.
 from tenacity import retry, stop_after_attempt, wait_fixed
 # Поддержка асинхронного программирования для не блокирующих операций.
@@ -25,7 +22,7 @@ logger = logging.getLogger(__name__)
 # APIRouter это как локальный 'удлинитель' к которму будут подключены все эндпоинты
 router = APIRouter(
     prefix='/compute', # Все пути будут начинаться с /compute
-    tags=['Background Tasks'], # Группировка в документации
+    tags=['Background Tasks'], # Группировка в документации Swagger
     dependencies=[Depends(get_current_user)] # Все эндпоинты здесь требуют авторизации
 )
 
