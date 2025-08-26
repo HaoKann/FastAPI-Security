@@ -150,7 +150,7 @@ async def login_for_token(form_data: OAuth2PasswordRequestForm = Depends(), pool
             headers={'WWW-Authenticate': 'Bearer'},
         )
     
-    return await create_tokens(data={"sub": user["username"]})
+    return  create_tokens(data={"sub": user["username"]})
 
 @router.get('/me', summary='Get current user info')
 async def read_users_me(current_user: dict = Depends(get_current_user)):
