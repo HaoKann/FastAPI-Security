@@ -5,7 +5,7 @@ import asyncpg
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status, APIRouter
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, OAuth2PasswordRequestForm
 from database import get_pool # Импортируем нашу зависимость для пула БД
 from pydantic import BaseModel
 
@@ -19,9 +19,8 @@ REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 # Создаем объекты один раз при загрузке модуля
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-# ИСПРАВЛЕНО: Путь к tokenUrl теперь включает префикс роутера
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token") # Указываем путь к эндпоинту для получения токена
-
+# ИСПРАВЛЕНО: Создаем простой security-объект. Он создаст правильную кнопку "Authorize".
+security = HTTPBearer()
 
 # СОЗДАЕМ ROUTER: Это наш "удлинитель" для всех эндпоинтов аутентификации
 router = APIRouter(
@@ -77,17 +76,15 @@ async def get_user_from_db(pool: asyncpg.Pool, username: str) -> dict | None:
 
 
 # --- 4. Зависимость для получения текущего пользователя ---
-# ИСПРАВЛЕНО: Это теперь единственная и простая зависимость для проверки пользователя.
 # Она напрямую запрашивает у FastAPI токен и пул соединений с БД.
+# ИСПРАВЛЕНО: Функция теперь зависит от HTTPBearer
 async def get_current_user(
-    token: str = Depends(oauth2_scheme), pool: asyncpg.Pool = Depends(get_pool)) -> dict:
+    credentials: HTTPAuthorizationCredentials = Depends(security), pool: asyncpg.Pool = Depends(get_pool)) -> dict:
     # Декодирует токен, проверяет его валидность и возвращает данные пользователя из БД.
     # Используется как зависимость в защищенных эндпоинтах.
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+    credentials_exception = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
+
+    token = credentials.credentials # Извлекаем токен из объекта credentials
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         

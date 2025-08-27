@@ -53,7 +53,7 @@ async def compute_factorial_task(pool: asyncpg.Pool, n: int, username: str, back
         async with pool.acquire() as conn:
                 await conn.execute(
                     'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
-                    username, f"factorial of {n}", str(result)
+                    username, f"factorial of {n}", result
                 )
         # Записывает успешное завершение.
         logger.info(f"Успешно вычислен факториал {n} = {result}")
@@ -76,7 +76,7 @@ async def compute_sum_range_task(pool: asyncpg.Pool, start: int, end: int, usern
         async with pool.acquire() as conn: # Используем acquire для asyncpg
                 await conn.execute(
                     'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
-                    username, f"sum from {start} to {end}", str(result)
+                    username, f"sum from {start} to {end}", result
                 )
         logger.info(f"Успешно вычислена сумма от {start} до {end} = {result}")
         background_tasks.add_task(notify_completion, username, result, f'Сумма от {start} до {end}' )
