@@ -1,18 +1,22 @@
-# BackgroundTasks позволяет запускать тяжёлые задачи (как факториал) в фоне, не блокируя клиента.
-# 1. Фоновые задачи (BackgroundTasks) — для тяжёлых вычислений
-# tenacity для настройки повторных попыток задач при сбоях.
-from tenacity import retry, stop_after_attempt, wait_fixed
+# BackgroundTasks позволяет запускать задачи в фоне, не блокируя клиента.
+# Подходят лёгких и быстрых задач: например, отправить письмо, записать лог, очистить временные файлы.
+# Работает только пока живёт процесс FastAPI. Если сервер упал или перезапустился — задача пропадёт.
+
 # Поддержка асинхронного программирования для не блокирующих операций.
 import asyncio
 # Модуль Python для записи логов (отладка, ошибки, информация).
 import logging
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
+
+# --- 1. Импорты и настройка ---
+
+# Импортируем наш главный объект Celery
+from celery_worker import celery_app
 from auth import get_current_user
-from database import get_pool
-# Импортируем manager из websocket.py, чтобы отправлять уведомления
-# Это безопасно, так как websocket.py не импортирует ничего из bg_tasks.py
-from websocket import manager
+from database import DB_CONNINFO # Импортируем СТРОКУ подключения, а не сам пул
+
 
 # Получаем логгер. __name__ автоматически подставит "bg_tasks"
 logger = logging.getLogger(__name__)
@@ -26,46 +30,83 @@ router = APIRouter(
     dependencies=[Depends(get_current_user)] # Все эндпоинты здесь требуют авторизации
 )
 
-# --- Утилиты ---
-# Добавление уведомлений
-# Функцию для отправки уведомлений через WebSocket после завершения фоновых задач 
-async def notify_completion(username: str, result: int, task_name: str):
-    await asyncio.sleep(1) # Короткая задержка для симуляции
-    await manager.broadcast(f"Уведомление для {username}: Задача {task_name} завершена! Результат: {result}")
+# --- 2. Модели Pydantic для эндпоинтов ---
+class FactorialRequest(BaseModel):
+    n: int
+
+class SumRequest(BaseModel):
+    start: int
+    end: int
 
 
-# --- Логика фоновых задач ---
 
-# Функция для симуляции тяжёлых вычислений. Это пример задачи, которую можно выполнить в фоне.
-# Функция с повторными попытками
-# Декоратор, который пытается выполнить функцию до 3 раз с паузой 2 секунды между попытками, если возникает ошибка.
-@retry(stop=stop_after_attempt(3), wait=wait_fixed(2)) 
-async def compute_factorial_task(pool: asyncpg.Pool, n: int, username: str, background_tasks: BackgroundTasks):
-    """Асинхронно вычисляет факториал и сохраняет результат в БД."""
-    try:
-        # Записывает начало задачи в лог
-        logger.info(f"Начало вычисление факториала {n} для {username}")
-        await asyncio.sleep(5) # Асинхронная задержка
-        result = 1
-        for i in range(1, n + 1):
-            result *= i
+# --- 3. Определяем задачи Celery ---
+# ВАЖНО: Мы больше не используем декоратор @retry от tenacity,
+# так как у Celery есть свои, более мощные механизмы для повторных попыток.
+@celery_app.task(name='compute_factorial_task')
+async def compute_factorial_task(username: str, n: int):
+    """
+    Celery-задача для вычисления факториала.
+    Эта функция выполняется НЕ в приложении FastAPI, а отдельным процессом-воркером.
+    """
+    logger.info(f'[CELERY] Начато вычисление факториала {n} для {username}')
 
-        async with pool.acquire() as conn:
-                await conn.execute(
+    # Симуляция долгой работы
+    import time
+    time.sleep(5)
+
+    result = 1
+    for i in range(1, n + 1):
+        result *= i
+
+    # ВАЖНО: Задача сама управляет своим подключением к БД.
+    async def save_to_db():
+        conn = await asyncpg.connect(dsn=DB_CONNINFO)
+        try:
+            await conn.execute(
                     'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
                     username, f"factorial of {n}", result
                 )
-        # Записывает успешное завершение.
-        logger.info(f"Успешно вычислен факториал {n} = {result}")
-        background_tasks.add_task(notify_completion, username, result, f'Факториал {n}')
-    except Exception as e:
-        logger.error(f"Ошибка при вычислении факториала {n}: {str(e)}")
-        raise # Передаём ошибку дальше для retry
+        finally:
+            await conn.close()
+
+        # Запускаем асинхронную функцию внутри синхронной задачи Celery
+        asyncio.run(save_to_db())
+
+        logger.info(f'[CELERY] Успешно вычислен факториал {n} = {result}')
+        return result
+
+
+
+# --- 4. Эндпоинты, которые ставят задачи в очередь ---
+
+@router.post('/factorial', status_code=status.HTTP_202_ACCEPTED)
+async def start_factorial_computation(
+    request: FactorialRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Принимает запрос и отправляет задачу на вычисление факториала в очередь Celery.
+    """
+    if request.n <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
+    
+    username = current_user['username']
+
+    # Отправляем задачу в очередь Redis.
+    # Celery-воркер подхватит ее и выполнит.
+    compute_factorial_task.delay(username=username, n=request.n)
+
+    return {'message': f'Задача по вычислению факториала {request.n} принята в обработку'}
+
+
+
+
 
 # Функция compute_sum_range, которая вычисляет сумму чисел в заданном диапазоне асинхронно.
 # @retry - декоратор из библиотеки tenacity, который позволяет повторить выполнение функции до 3 раз с интервалом 2 секунды, 
 # если она завершится с ошибкой. Это полезно для обработки временных сбоев (например, с базой данных).
-@retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
+
 async def compute_sum_range_task(pool: asyncpg.Pool, start: int, end: int, username: str, background_tasks: BackgroundTasks):
     """Асинхронно вычисляет сумму в диапазоне и сохраняет результат."""
     try:
@@ -86,23 +127,7 @@ async def compute_sum_range_task(pool: asyncpg.Pool, start: int, end: int, usern
         raise
 
 
-#  Эндпоинты подключенные к 'удлинителю' APIRouter
 
-@router.post('/factorial')
-async def start_factorial_computation(
-    n: int,
-    background_tasks: BackgroundTasks,
-    current_user: dict = Depends(get_current_user),
-    pool: asyncpg.Pool = Depends(get_pool)
-):
-    """Запускает вычисление факториала в фоновом режиме."""
-    if n <= 0:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Число должно быть положительным')
-    
-    username = current_user['username']
-    # Передаем пул в фоновую задачу как обычный аргумент
-    background_tasks.add_task(compute_factorial_task, pool, n, username, background_tasks)
-    return {'message': f'Вычисление факториала {n} начато в фоне'}
 
 @router.post('/sum')
 async def start_sum_computation(
