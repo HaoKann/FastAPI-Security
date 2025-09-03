@@ -78,6 +78,39 @@ async def compute_factorial_task(username: str, n: int):
 
 
 
+# Celery задача compute_sum_range, которая вычисляет сумму чисел в заданном диапазоне асинхронно.
+@celery_app.task(name='compute_sum_range_task')
+async def compute_sum_range_task(start: int, end: int, username: str):
+    """
+    Celery-задача для вычисления суммы в диапазоне.
+    Выполняется отдельным процессом-воркером.
+    """
+    logger.info(f"[CELERY] Начало вычисления суммы от {start} до {end} для {username}")
+    
+    import time
+    time.sleep(3)
+        
+    result = sum(range(start, end + 1))
+
+    # Задача сама управляет своим подключением к БД.
+    async def save_to_db(): 
+            conn = await asyncpg.connect(dsn=DB_CONNINFO)
+            try:
+                await conn.execute(
+                    'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
+                    username, f"sum from {start} to {end}", result
+                )
+            finally:
+                await conn.close()
+            
+            asyncio.run(save_to_db())
+
+            # Запускаем асинхронную функцию внутри синхронной задачи Celery
+            logger.info(f"[CELERY] Успешно вычислена сумма от {start} до {end} = {result}")
+            return result
+    
+
+        
 # --- 4. Эндпоинты, которые ставят задачи в очередь ---
 
 @router.post('/factorial', status_code=status.HTTP_202_ACCEPTED)
@@ -102,45 +135,12 @@ async def start_factorial_computation(
 
 
 
-
-# Функция compute_sum_range, которая вычисляет сумму чисел в заданном диапазоне асинхронно.
-# @retry - декоратор из библиотеки tenacity, который позволяет повторить выполнение функции до 3 раз с интервалом 2 секунды, 
-# если она завершится с ошибкой. Это полезно для обработки временных сбоев (например, с базой данных).
-
-async def compute_sum_range_task(pool: asyncpg.Pool, start: int, end: int, username: str, background_tasks: BackgroundTasks):
-    """Асинхронно вычисляет сумму в диапазоне и сохраняет результат."""
-    try:
-        logger.info(f"Начало вычисления суммы от {start} до {end} для {username}")
-        await asyncio.sleep(3) # Симуляция длительной задачи
-        result = sum(range(start, end + 1))
-
-        async with pool.acquire() as conn: # Используем acquire для asyncpg
-                await conn.execute(
-                    'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
-                    username, f"sum from {start} to {end}", result
-                )
-        logger.info(f"Успешно вычислена сумма от {start} до {end} = {result}")
-        background_tasks.add_task(notify_completion, username, result, f'Сумма от {start} до {end}' )
-    except Exception as e:
-        logger.error(f"Ошибка при вычислении суммы: {str(e)}")
-        # Передаёт исключение дальше, чтобы оно было обработано вызывающим кодом.
-        raise
-
-
-
-
-@router.post('/sum')
-async def start_sum_computation(
-    start: int, 
-    end: int, 
-    background_tasks: BackgroundTasks, 
-    current_user: dict = Depends(get_current_user),
-    pool: asyncpg.Pool = Depends(get_pool)
-):
+@router.post('/sum', status_code=status.HTTP_202_ACCEPTED)
+async def start_sum_computation(request: SumRequest, current_user: dict = Depends(get_current_user) ):
     """Запускает вычисление суммы в диапазоне в фоновом режиме."""
-    if start > end:
+    if request.start > request.end:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Начало диапозона не может быть больше конца')
     
     username = current_user['username']
-    background_tasks.add_task(compute_sum_range_task, pool, start, end, username, background_tasks)
-    return {'message': f'Вычисление суммы от {start} до {end} начато в фоне'}
+    compute_sum_range_task.delay(start = request.start, end = request.end, username = username)
+    return {'message': f'Вычисление суммы от {request.start} до {request.end} начато в фоне'}

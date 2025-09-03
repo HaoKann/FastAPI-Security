@@ -23,9 +23,12 @@ from routers.products import router as products_router
 
 # Это как "выключатель" для приложения, нужен для правильного включения и выключения подключения к БД
 # ИСПРАВЛЕНО: Используем новый, рекомендуемый способ управления жизненным циклом - lifespan.
-# Это решает ошибку "coroutine was never awaited" при старте.
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """
+    Контекстный менеджер для управления событиями "startup" и "shutdown".
+    Это современный и надежный способ управлять ресурсами, такими как пул соединений с БД.
+    """
     # --- Начало: Код до yield ---
     # Выполняется ОДИН РАЗ при старте сервера
     await connect_to_db(app)
@@ -44,8 +47,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title='My Refactored FastAPI App',
     description="Это приложение демонстрирует модульную архитектуру с аутентификацией, WebSocket и фоновыми задачами.",
-    version='1.0.0',
-    lifespan=lifespan
+    version='2.0.0',
+    lifespan=lifespan # <--- Подключаем наш менеджер жизненного цикла
 )
 
 
@@ -58,7 +61,7 @@ app.include_router(websocket_router)
 app.include_router(products_router)
 
 
-# --- 4. Корневой эндпоинт (опционально) ---
+# --- 5. Корневой эндпоинт (опционально) ---
 # Это простой эндпоинт, чтобы можно было легко проверить, что сервер запущен.
 @app.get('/', tags=['Root'])
 def read_root():
