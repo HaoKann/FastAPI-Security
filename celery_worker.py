@@ -1,8 +1,15 @@
+import eventlet
+
+# ВАЖНО: Эта команда должна быть В САМОМ НАЧАЛЕ, до всех остальных импортов.
+# Она "патчит" стандартные библиотеки Python, чтобы они работали с eventlet.
+eventlet.monkey_patch()
+
 from celery import Celery
 import os
 from dotenv import load_dotenv
 
-# Загружаем переменные окружения из .env файла
+# Загружаем переменные окружения ПЕРЕД тем, как их использовать.
+# Это гарантирует, что os.getenv() найдет REDIS_URL из .env файла.
 load_dotenv()
 
 
@@ -30,4 +37,9 @@ celery_app = Celery(
 # Опциональная конфигурация для улучшения работы
 celery_app.conf.update(
     task_track_started=True, # Отслеживать, когда задача началась
+    task_serializer='json',
+    accept_content=['json'], 
+    result_serializer='json',
+    timezone='UTC',
+    enable_utc=True,
 )

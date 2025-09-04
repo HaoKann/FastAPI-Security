@@ -9,13 +9,22 @@ import logging
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from dotenv import load_dotenv
+import os
 
 # --- 1. Импорты и настройка ---
 
 # Импортируем наш главный объект Celery
 from celery_worker import celery_app
 from auth import get_current_user
-from database import DB_CONNINFO # Импортируем СТРОКУ подключения, а не сам пул
+
+# ИСПРАВЛЕНО: Загружаем переменные окружения прямо здесь
+load_dotenv()
+
+# ИСПРАВЛЕНО: Модуль сам определяет строку подключения к БД, читая ее из .env
+DB_CONNINFO = (f"host={os.getenv('DB_HOST')} port={os.getenv('DB_PORT')} "
+               f"dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} "
+               f"password={os.getenv('DB_PASSWORD')}")
 
 
 # Получаем логгер. __name__ автоматически подставит "bg_tasks"
@@ -50,32 +59,25 @@ async def compute_factorial_task(username: str, n: int):
     Эта функция выполняется НЕ в приложении FastAPI, а отдельным процессом-воркером.
     """
     logger.info(f'[CELERY] Начато вычисление факториала {n} для {username}')
-
     # Симуляция долгой работы
-    import time
-    time.sleep(5)
-
+    await asyncio.sleep(5)
+    
     result = 1
     for i in range(1, n + 1):
         result *= i
 
-    # ВАЖНО: Задача сама управляет своим подключением к БД.
-    async def save_to_db():
-        conn = await asyncpg.connect(dsn=DB_CONNINFO)
-        try:
-            await conn.execute(
-                    'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
-                    username, f"factorial of {n}", result
-                )
-        finally:
-            await conn.close()
+    # Напрямую работаем с БД, без вложенных функций
+    conn = await asyncpg.connect(dsn=DB_CONNINFO)
+    try:
+        await conn.execute(
+                'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
+                username, f"factorial of {n}", result
+            )
+    finally:
+        await conn.close()
 
-        # Запускаем асинхронную функцию внутри синхронной задачи Celery
-        asyncio.run(save_to_db())
-
-        logger.info(f'[CELERY] Успешно вычислен факториал {n} = {result}')
-        return result
-
+    logger.info(f'[CELERY] Успешно вычислен факториал {n} = {result}')
+    return result
 
 
 # Celery задача compute_sum_range, которая вычисляет сумму чисел в заданном диапазоне асинхронно.
@@ -86,28 +88,22 @@ async def compute_sum_range_task(start: int, end: int, username: str):
     Выполняется отдельным процессом-воркером.
     """
     logger.info(f"[CELERY] Начало вычисления суммы от {start} до {end} для {username}")
-    
-    import time
-    time.sleep(3)
-        
+    await asyncio.sleep(3)
     result = sum(range(start, end + 1))
 
-    # Задача сама управляет своим подключением к БД.
-    async def save_to_db(): 
-            conn = await asyncpg.connect(dsn=DB_CONNINFO)
-            try:
-                await conn.execute(
-                    'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
-                    username, f"sum from {start} to {end}", result
-                )
-            finally:
-                await conn.close()
+   
+    conn = await asyncpg.connect(dsn=DB_CONNINFO)
+    try:
+        await conn.execute(
+                'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
+                username, f"sum from {start} to {end}", result
+            )
+    finally:
+        await conn.close()
             
-            asyncio.run(save_to_db())
-
-            # Запускаем асинхронную функцию внутри синхронной задачи Celery
-            logger.info(f"[CELERY] Успешно вычислена сумма от {start} до {end} = {result}")
-            return result
+    # Запускаем асинхронную функцию внутри синхронной задачи Celery
+    logger.info(f"[CELERY] Успешно вычислена сумма от {start} до {end} = {result}")
+    return result
     
 
         
