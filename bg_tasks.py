@@ -14,17 +14,13 @@ import os
 
 # --- 1. Импорты и настройка ---
 
+# ИСПРАВЛЕНО: Загружаем переменные окружения прямо здесь
+# чтобы Celery-воркер гарантированно их увидел.
+load_dotenv()
+
 # Импортируем наш главный объект Celery
 from celery_worker import celery_app
 from auth import get_current_user
-
-# ИСПРАВЛЕНО: Загружаем переменные окружения прямо здесь
-load_dotenv()
-
-# ИСПРАВЛЕНО: Модуль сам определяет строку подключения к БД, читая ее из .env
-DB_CONNINFO = (f"host={os.getenv('DB_HOST')} port={os.getenv('DB_PORT')} "
-               f"dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} "
-               f"password={os.getenv('DB_PASSWORD')}")
 
 
 # Получаем логгер. __name__ автоматически подставит "bg_tasks"
@@ -53,58 +49,72 @@ class SumRequest(BaseModel):
 # ВАЖНО: Мы больше не используем декоратор @retry от tenacity,
 # так как у Celery есть свои, более мощные механизмы для повторных попыток.
 @celery_app.task(name='compute_factorial_task')
-async def compute_factorial_task(username: str, n: int):
+def compute_factorial_task(username: str, n: int):
     """
     Celery-задача для вычисления факториала.
-    Эта функция выполняется НЕ в приложении FastAPI, а отдельным процессом-воркером.
+    Эта функция ВЫЗЫВАЕТСЯ синхронно, но ВНУТРИ запускает асинхронный код.
     """
     logger.info(f'[CELERY] Начато вычисление факториала {n} для {username}')
+
+    # Вся асинхронная логика теперь находится внутри этой вложенной функции
+    async def _run_async_logic():
     # Симуляция долгой работы
-    await asyncio.sleep(5)
-    
-    result = 1
-    for i in range(1, n + 1):
-        result *= i
+        await asyncio.sleep(5)
+        result = 1
+        for i in range(1, n + 1):
+            result *= i
+
+        # ИСПРАВЛЕНО: Формируем правильную DSN-строку в формате URL
+        # Подключаемся к БД, используя DSN из .env
+        DATABASE_URL = (f"postgres://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
+                        f"@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}")
 
     # Напрямую работаем с БД, без вложенных функций
-    conn = await asyncpg.connect(dsn=DB_CONNINFO)
-    try:
-        await conn.execute(
-                'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
-                username, f"factorial of {n}", result
-            )
-    finally:
-        await conn.close()
+        conn = await asyncpg.connect(dsn=DATABASE_URL)
+        try:
+            await conn.execute(
+                    'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
+                    username, f"factorial of {n}", result
+                )
+        finally:
+            await conn.close()
 
-    logger.info(f'[CELERY] Успешно вычислен факториал {n} = {result}')
-    return result
-
+        logger.info(f'[CELERY] Успешно вычислен факториал {n} = {result}')
+        return result
+    
+    # Запускаем нашу асинхронную функцию и ждем ее завершения.
+    # Это решает проблему "coroutine is not JSON serializable".
+    return asyncio.run(_run_async_logic())
 
 # Celery задача compute_sum_range, которая вычисляет сумму чисел в заданном диапазоне асинхронно.
 @celery_app.task(name='compute_sum_range_task')
-async def compute_sum_range_task(start: int, end: int, username: str):
+def compute_sum_range_task(start: int, end: int, username: str):
     """
     Celery-задача для вычисления суммы в диапазоне.
     Выполняется отдельным процессом-воркером.
     """
     logger.info(f"[CELERY] Начало вычисления суммы от {start} до {end} для {username}")
-    await asyncio.sleep(3)
-    result = sum(range(start, end + 1))
 
-   
-    conn = await asyncpg.connect(dsn=DB_CONNINFO)
-    try:
-        await conn.execute(
-                'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
-                username, f"sum from {start} to {end}", result
-            )
-    finally:
-        await conn.close()
-            
-    # Запускаем асинхронную функцию внутри синхронной задачи Celery
-    logger.info(f"[CELERY] Успешно вычислена сумма от {start} до {end} = {result}")
-    return result
+    async def _run_async_logic():
+        await asyncio.sleep(3)
+        result = sum(range(start, end + 1))
+
+        DATABASE_URL = (f"postgres://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
+                        f"@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}")
+
+        conn = await asyncpg.connect(dsn=DATABASE_URL)
+        try:
+            await conn.execute(
+                    'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
+                    username, f"sum from {start} to {end}", result
+                )
+        finally:
+            await conn.close()
+                
+        logger.info(f"[CELERY] Успешно вычислена сумма от {start} до {end} = {result}")
+        return result
     
+    return asyncio.run(_run_async_logic())
 
         
 # --- 4. Эндпоинты, которые ставят задачи в очередь ---
