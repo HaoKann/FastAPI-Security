@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 # Создаем APIRouter. Все эндпоинты в этом файле будут привязаны к нему.
-# APIRouter это как локальный 'удлинитель' к которму будут подключены все эндпоинты
+# APIRouter это как локальный 'удлинитель' к которому будут подключены все эндпоинты
 router = APIRouter(
     prefix='/compute', # Все пути будут начинаться с /compute
     tags=['Background Tasks'], # Группировка в документации Swagger
@@ -48,71 +48,80 @@ class SumRequest(BaseModel):
 # --- 3. Определяем задачи Celery ---
 # ВАЖНО: Мы больше не используем декоратор @retry от tenacity,
 # так как у Celery есть свои, более мощные механизмы для повторных попыток.
-@celery_app.task(name='compute_factorial_task')
-def compute_factorial_task(username: str, n: int):
+@celery_app.task(bind=True, name='compute_factorial_task')
+def compute_factorial_task(self, username: str, n: int):
     """
-    Celery-задача для вычисления факториала.
+    Celery-задача для вычисления факториала с механизмом повторных попыток.
     Эта функция ВЫЗЫВАЕТСЯ синхронно, но ВНУТРИ запускает асинхронный код.
     """
-    logger.info(f'[CELERY] Начато вычисление факториала {n} для {username}')
+    logger.info(f'[CELERY] Попытка {self.request.retries + 1}. Начато вычисление факториала {n} для {username}')
 
     # Вся асинхронная логика теперь находится внутри этой вложенной функции
     async def _run_async_logic():
     # Симуляция долгой работы
-        await asyncio.sleep(5)
-        result = 1
-        for i in range(1, n + 1):
-            result *= i
+        try:
+            await asyncio.sleep(5)
+            result = 1
+            for i in range(1, n + 1):
+                result *= i
 
-        # ИСПРАВЛЕНО: Формируем правильную DSN-строку в формате URL
-        # Подключаемся к БД, используя DSN из .env
-        DATABASE_URL = (f"postgres://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
-                        f"@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}")
+            # ИСПРАВЛЕНО: Формируем правильную DSN-строку в формате URL
+            # Подключаемся к БД, используя DSN из .env
+            DATABASE_URL = (f"postgres://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
+                            f"@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}")
 
     # Напрямую работаем с БД, без вложенных функций
-        conn = await asyncpg.connect(dsn=DATABASE_URL)
-        try:
-            await conn.execute(
-                    'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
-                    username, f"factorial of {n}", result
-                )
-        finally:
-            await conn.close()
+            conn = await asyncpg.connect(dsn=DATABASE_URL)
+            try:
+                await conn.execute(
+                        'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
+                        username, f"factorial of {n}", result
+                    )
+            finally:
+                await conn.close()
 
-        logger.info(f'[CELERY] Успешно вычислен факториал {n} = {result}')
-        return result
+            logger.info(f'[CELERY] Успешно вычислен факториал {n} = {result}')
+            return result
     
+        except Exception as e:
+            logger.warning(f'[CELERY] Ошибка при выполнении задачи: {e}. Попытка повтора...')
+            raise self.retry(exc=e, countdown=5, max_retries=3)
+
     # Запускаем нашу асинхронную функцию и ждем ее завершения.
     # Это решает проблему "coroutine is not JSON serializable".
     return asyncio.run(_run_async_logic())
 
 # Celery задача compute_sum_range, которая вычисляет сумму чисел в заданном диапазоне асинхронно.
-@celery_app.task(name='compute_sum_range_task')
-def compute_sum_range_task(start: int, end: int, username: str):
+@celery_app.task(bind=True, name='compute_sum_range_task')
+def compute_sum_range_task(self, start: int, end: int, username: str):
     """
     Celery-задача для вычисления суммы в диапазоне.
     Выполняется отдельным процессом-воркером.
     """
-    logger.info(f"[CELERY] Начало вычисления суммы от {start} до {end} для {username}")
+    logger.info(f"[CELERY] Попытка {self.request.retries + 1}. Начало вычисления суммы от {start} до {end} для {username}")
 
     async def _run_async_logic():
-        await asyncio.sleep(3)
-        result = sum(range(start, end + 1))
-
-        DATABASE_URL = (f"postgres://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
-                        f"@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}")
-
-        conn = await asyncpg.connect(dsn=DATABASE_URL)
         try:
-            await conn.execute(
-                    'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
-                    username, f"sum from {start} to {end}", result
-                )
-        finally:
-            await conn.close()
-                
-        logger.info(f"[CELERY] Успешно вычислена сумма от {start} до {end} = {result}")
-        return result
+            await asyncio.sleep(3)
+            result = sum(range(start, end + 1))
+
+            DATABASE_URL = (f"postgres://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
+                            f"@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}")
+
+            conn = await asyncpg.connect(dsn=DATABASE_URL)
+            try:
+                await conn.execute(
+                        'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
+                        username, f"sum from {start} to {end}", result
+                    )
+            finally:
+                await conn.close()
+                    
+            logger.info(f"[CELERY] Успешно вычислена сумма от {start} до {end} = {result}")
+            return result
+        except Exception as e:
+            logger.warning(f'[CELERY] Ошибка при выполнении задачи: {e}. Попытка повтора...')
+            raise self.retry(exc=e, countdown=5, max_retries=3)
     
     return asyncio.run(_run_async_logic())
 

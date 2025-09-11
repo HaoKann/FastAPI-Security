@@ -51,9 +51,11 @@ manager = ConnectionManager()
 @router.websocket('/ws/notifications')
 async def websocket_notification(
     websocket: WebSocket,
-    token: str = Query(...),
-    pool: asyncpg.Pool = Depends(get_pool)
+    token: str = Query(...)
 ):
+    # ИСПРАВЛЕНО: Получаем пул напрямую из websocket
+    pool: asyncpg.Pool = websocket.app.state.pool
+
     """
     Эндпоинт для получения уведомлений от сервера (например, о завершении фоновых задач).
     Клиент подключается и слушает.
@@ -95,9 +97,10 @@ async def websocket_notification(
 @router.websocket('/ws/chat')
 async def websocket_chat(
     websocket: WebSocket,
-    token: str = Query(...),
-    pool: asyncpg.Pool = Depends(get_pool)
+    token: str = Query(...)
 ):
+    # ИСПРАВЛЕНО: Получаем пул напрямую из websocket
+    pool: asyncpg.Pool = websocket.app.state.pool
     """
     Эндпоинт для интерактивного чата.
     Клиент подключается, может отправлять и получать сообщения.

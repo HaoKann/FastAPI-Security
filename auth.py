@@ -38,6 +38,8 @@ class UserCreate(BaseModel):
     username: str
     password: str
 
+class UserOut(BaseModel):
+    username: str
 
 # --- 3. Утилиты (без изменений) ---
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -145,13 +147,11 @@ async def login_for_token(form_data: OAuth2PasswordRequestForm = Depends(), pool
             headers={'WWW-Authenticate': 'Bearer'},
         )
     
-    return  create_tokens(data={"sub": user["username"]})
+    return create_tokens(data={"sub": user["username"]})
 
-@router.get('/me', summary='Get current user info')
+@router.get('/me', summary='Get current user info', response_model=UserOut)
 async def read_users_me(current_user: dict = Depends(get_current_user)):
-    """Возвращает информацию про текущего пользовател (без хеша пароля)."""
-    user_info = current_user.copy()
-    user_info.pop('hashed_password', None)
+    return current_user # Pydantic автоматически отфильтрует нужные поля
 
 
 # Защищенный эндпоинт для пользователя
