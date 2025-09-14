@@ -48,6 +48,7 @@ class SumRequest(BaseModel):
 # --- 3. Определяем задачи Celery ---
 # ВАЖНО: Мы больше не используем декоратор @retry от tenacity,
 # так как у Celery есть свои, более мощные механизмы для повторных попыток.
+
 @celery_app.task(bind=True, name='compute_factorial_task')
 def compute_factorial_task(self, username: str, n: int):
     """
@@ -70,6 +71,9 @@ def compute_factorial_task(self, username: str, n: int):
             DATABASE_URL = (f"postgres://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
                             f"@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}")
 
+            # Отладочный вывод: печатаем адрес, по которому пытаемися подключиться
+            logger.info(f"[CELERY DEBUG] Пытаюсь подключиться по адресу {DATABASE_URL.replace(os.getenv('DB_PASSWORD'), '********' )}")
+
     # Напрямую работаем с БД, без вложенных функций
             conn = await asyncpg.connect(dsn=DATABASE_URL)
             try:
@@ -85,6 +89,8 @@ def compute_factorial_task(self, username: str, n: int):
     
         except Exception as e:
             logger.warning(f'[CELERY] Ошибка при выполнении задачи: {e}. Попытка повтора...')
+            # Используем встроенный механизм retry от Celery
+            # exc=e передает оригинальную ошибку e внутрь механизма повторных попыток Celery
             raise self.retry(exc=e, countdown=5, max_retries=3)
 
     # Запускаем нашу асинхронную функцию и ждем ее завершения.
@@ -107,6 +113,8 @@ def compute_sum_range_task(self, start: int, end: int, username: str):
 
             DATABASE_URL = (f"postgres://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
                             f"@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}")
+
+            logger.info(f"[CELERY DEBUG] Пытаюсь подключиться по адресу: {DATABASE_URL.replace(os.getenv('DB_PASSWORD'), '********')}")
 
             conn = await asyncpg.connect(dsn=DATABASE_URL)
             try:
