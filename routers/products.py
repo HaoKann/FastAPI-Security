@@ -22,6 +22,10 @@ class Product(BaseModel):
     price: float
     owner_username: str
 
+class ProductCreate(BaseModel):
+    name: str
+    price: float
+
 
 # --- Эндпоинты ---
 
@@ -46,8 +50,9 @@ async def get_products(current_user: dict = Depends(get_current_user), pool: asy
 
 
 # Защищённый эндпоинт для создания нового продукта, доступный только авторизованным пользователям.
+# ИСПРАВЛЕНО: Эндпоинт теперь принимает Pydantic-модель ProductCreate
 @router.post('/', response_model=Product)
-async def create_product(name: str, price: float, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user), pool: asyncpg.Pool = Depends(get_pool)):
+async def create_product(product_data: ProductCreate, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user), pool: asyncpg.Pool = Depends(get_pool)):
     """Создает новый продукт для текущего пользователя."""
     username = current_user['username']
     async with pool.acquire() as conn:
@@ -55,7 +60,7 @@ async def create_product(name: str, price: float, background_tasks: BackgroundTa
                 new_product_record = await conn.fetchrow(
                     # RETURNING * возвращает все только что вставленные данные.
                     "INSERT INTO products (name, price, owner_username) VALUES ($1, $2, $3) RETURNING *",
-                    name, price, username
+                    product_data.name, product_data.price, username
                 )
                 if not new_product_record:
                      raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail= 'Не удалось создать продукт')            
