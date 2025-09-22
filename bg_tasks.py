@@ -45,7 +45,7 @@ class SumRequest(BaseModel):
 
 
 
-# --- 3. Определяем задачи Celery ---
+# --- 3. Celery Задачи с ЭКСПОНЕНЦИАЛЬНОЙ ЗАДЕРЖКОЙ ---
 # ВАЖНО: Мы больше не используем декоратор @retry от tenacity,
 # так как у Celery есть свои, более мощные механизмы для повторных попыток.
 
@@ -89,9 +89,10 @@ def compute_factorial_task(self, username: str, n: int):
     
         except Exception as e:
             logger.warning(f'[CELERY] Ошибка при выполнении задачи: {e}. Попытка повтора...')
-            # Используем встроенный механизм retry от Celery
-            # exc=e передает оригинальную ошибку e внутрь механизма повторных попыток Celery
-            raise self.retry(exc=e, countdown=5, max_retries=3)
+            # ИЗМЕНЕНИЕ: Используем экспоненциальную задержку
+            # 1-я попытка через 5с, 2-я через 10с, 3-я через 20с
+            delay = 5 * (2 ** self.request.retries)
+            raise self.retry(exc=e, countdown=delay, max_retries=3)
 
     # Запускаем нашу асинхронную функцию и ждем ее завершения.
     # Это решает проблему "coroutine is not JSON serializable".
@@ -129,7 +130,8 @@ def compute_sum_range_task(self, start: int, end: int, username: str):
             return result
         except Exception as e:
             logger.warning(f'[CELERY] Ошибка при выполнении задачи: {e}. Попытка повтора...')
-            raise self.retry(exc=e, countdown=5, max_retries=3)
+            delay = 5 * (2 ** self.request.retries )
+            raise self.retry(exc=e, countdown=delay, max_retries=3)
     
     return asyncio.run(_run_async_logic())
 
