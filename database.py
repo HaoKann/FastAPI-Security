@@ -1,20 +1,20 @@
 # Управление соединением с базой данных.
 
+import os
 import asyncpg
 from fastapi import Request
-import os
+
+# Импортируем готовые настройки из нашего центрального конфига
+from config import DATABASE_URL, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
 
 # Эта функция будет вызываться один раз при старте приложения
 async def connect_to_db(app):
     # Создает пул соединений и сохраняет его для хранения общих ресурсов
     # app.state - специальный объект для хранения общих ресурсов
     print('Connecting to database...')
+    # Используем DATABASE_URL, который уже содержит все данные
     app.state.pool = await asyncpg.create_pool(
-        host=os.getenv('DB_HOST', 'localhost'),
-        port=int(os.getenv('DB_PORT', 5432)),
-        database=os.getenv('DB_NAME', 'fastapi_auth'),
-        user=os.getenv('DB_USER', 'postgres'),
-        password=os.getenv('DB_PASSWORD', '123456789'),
+        dsn=DATABASE_URL,
         min_size=1,
         max_size=20
     )

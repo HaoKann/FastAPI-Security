@@ -1,14 +1,14 @@
-from fastapi import FastAPI
-from dotenv import load_dotenv
-from contextlib import asynccontextmanager
+import eventlet
+eventlet.monkey_patch()
 
-# Загружаем переменные окружения в самом начале.
-# Это важно сделать до импорта других модулей, которые их используют.
-load_dotenv()
+from fastapi import FastAPI
+from contextlib import asynccontextmanager
 
 
 # --- 1. Импортируем наши модули ---
-
+# ВАЖНО: config должен импортироваться до модулей, которые его используют.
+# Он сам загрузит нужный .env или .env.test файл.
+import config
 # Импортируем функции для управления жизненным циклом БД
 from database import connect_to_db, close_db_connection
 # Импортируем готовые "удлинители" (роутеры) из каждого модуля
