@@ -5,7 +5,7 @@ import asyncpg
 from fastapi import Request
 
 # Импортируем готовые настройки из нашего центрального конфига
-from config import DATABASE_URL, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+from config import DATABASE_URL
 
 # Эта функция будет вызываться один раз при старте приложения
 async def connect_to_db(app):

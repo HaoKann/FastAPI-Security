@@ -8,10 +8,10 @@ def test_read_root(client: TestClient):
     (client: TestClient): Наш "виртуальный Postman", который мы создали в conftest.py.
     Pytest автоматически найдет его и передаст сюда.
     """
-
+    print('Starting test_read_root')
     # Шаг 1: Отправляем GET-запрос на адрес "/"
     response = client.get('/')
-
+    print(f"Response status: {response.status_code}, JSON: {response.json()}")
     # Шаг 2: Проверяем результат (Утверждаем)
     assert response.status_code == 200
     assert response.json() == {'status': 'API is running.'}
@@ -22,3 +22,4 @@ def test_not_found(client: TestClient):
     """
     response = client.get('/a/b/c/d/e/f/g')
     assert response.status_code == 404
+

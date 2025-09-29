@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 import os
+from database import get_pool
 
 # --- 1. Настройка тестового окружения ---
 
@@ -14,8 +15,18 @@ from main import app
 
 # --- 2. Создаем наши "помощники" (фикстуры) ---
 
-@pytest.fixture(scope='module')
-def client():
+@pytest.fixture(scope='function')
+def db_pool(monkeypatch):
+    # Мокаем пул для тестов (например, возвращаем пустой пул)
+    async def mock_get_pool(request):
+        return None # Возвращаем None как тестовый пул
+    monkeypatch.setattr('database.get_pool', mock_get_pool)
+    return None
+
+
+# scope='module' - client создаётся 1 раз для всех тестов в модуле, что эффективно.
+@pytest.fixture(scope='function')
+def client(db_pool):
     """
     Эта фикстура создает "виртуальный Postman" (TestClient) для нашего приложения.
     Она будет выполняться один раз для каждого тестового файла.
