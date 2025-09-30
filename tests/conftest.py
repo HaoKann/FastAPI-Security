@@ -18,24 +18,27 @@ from main import app
 @pytest.fixture(scope='function')
 def db_pool(monkeypatch):
     # Мокаем пул для тестов (например, возвращаем пустой пул)
-    async def mock_get_pool(request):
+    def mock_get_pool(request):
         return None # Возвращаем None как тестовый пул
     monkeypatch.setattr('database.get_pool', mock_get_pool)
     return None
 
 
-# scope='module' - client создаётся 1 раз для всех тестов в модуле, что эффективно.
+
 @pytest.fixture(scope='function')
 def client(db_pool):
     """
     Эта фикстура создает "виртуальный Postman" (TestClient) для нашего приложения.
     Она будет выполняться один раз для каждого тестового файла.
     """
+    print('Creating TestClient')
     # Контекстный менеджер `with` гарантирует, что все "включения" и "выключения"
     # нашего приложения (lifespan) будут корректно вызваны. 
-    with TestClient(app) as test_client:
+    with TestClient(app, raise_server_exceptions=False) as test_client:
         # `yield` передает управление тесту, который запросил этого "помощника".
+        print('TestClient created')
         yield test_client
+        print('TestClient closed')
 
         # Код после `yield` выполнится после того, как все тесты в файле завершатся.
         # Здесь можно было бы, например, очищать тестовые данные.

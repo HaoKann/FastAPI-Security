@@ -81,7 +81,7 @@ async def get_user_from_db(pool: asyncpg.Pool, username: str) -> dict | None:
 # Она напрямую запрашивает у FastAPI токен и пул соединений с БД.
 # ИСПРАВЛЕНО: Функция теперь зависит от HTTPBearer
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security), pool: asyncpg.Pool = Depends(get_pool)) -> dict:
+    credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
     # Декодирует токен, проверяет его валидность и возвращает данные пользователя из БД.
     # Используется как зависимость в защищенных эндпоинтах.
     credentials_exception = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
@@ -89,27 +89,15 @@ async def get_current_user(
     token = credentials.credentials # Извлекаем токен из объекта credentials
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        
         # Проверяем, что это именно access токен
         if payload.get("type") != "access":
             raise credentials_exception
-        
-        username: str = payload.get("sub")
+        username = payload.get('sub')
         if username is None:
             raise credentials_exception
-
-        # Получаем пользователя из БД, чтобы убедиться, что он все еще существует
-        user = await get_user_from_db(pool, username)
-        
-        if user is None:
-            raise credentials_exception
-            
-        # Возвращаем пользователя в виде словаря
-        return user
+        return {'username': username}
     except JWTError:
-        # Эта ошибка возникает, если токен просрочен или подпись неверна
         raise credentials_exception
-
 
 
 # --- 5. НОВЫЙ БЛОК: Эндпоинты, перенесенные из main.py ---

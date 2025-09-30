@@ -17,9 +17,11 @@ def test_read_root(client: TestClient):
     assert response.json() == {'status': 'API is running.'}
 
 def test_not_found(client: TestClient):
+    print("Starting test_not_found")
     """
     Проверяем, что запрос к несуществующему пути возвращает ошибку 404 Not Found.
     """
     response = client.get('/a/b/c/d/e/f/g')
+    print(f"Response status: {response.status_code}")
     assert response.status_code == 404
 
