@@ -1,6 +1,8 @@
 import pytest
 from fastapi.testclient import TestClient
 import os
+
+
 from database import get_pool
 
 # --- 1. Настройка тестового окружения ---
@@ -9,11 +11,15 @@ from database import get_pool
 # что оно запущено в режиме тестирования. Это позволит нам в будущем
 # подменять, например, настоящую БД на тестовую.
 os.environ['TESTING'] = 'True'
-
+print('Starting app import...')
 # ВАЖНО: Импортируем `app` из main.py ПОСЛЕ установки переменной окружения.
-from main import app
-
-# --- 2. Создаем наши "помощники" (фикстуры) ---
+try:
+    from main import app
+    print('App imported successfully')
+    # --- 2. Создаем наши "помощники" (фикстуры) ---
+except Exception as e:
+    print(f"Error importing app: {e}")
+    raise
 
 @pytest.fixture(scope='function')
 def db_pool(monkeypatch):
@@ -22,7 +28,6 @@ def db_pool(monkeypatch):
         return None # Возвращаем None как тестовый пул
     monkeypatch.setattr('database.get_pool', mock_get_pool)
     return None
-
 
 
 @pytest.fixture(scope='function')

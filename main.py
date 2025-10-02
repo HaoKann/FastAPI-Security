@@ -19,25 +19,25 @@ from routers.products import router as products_router
 
 # Это как "выключатель" для приложения, нужен для правильного включения и выключения подключения к БД
 # # ИСПРАВЛЕНО: Используем новый, рекомендуемый способ управления жизненным циклом - lifespan.
-# @asynccontextmanager
-# async def lifespan(app: FastAPI):
-#     """
-#     Контекстный менеджер для управления событиями "startup" и "shutdown".
-#     Это современный и надежный способ управлять ресурсами, такими как пул соединений с БД.
-#     """
-#     print("Lifespan starting")
-#     app.state.pool = None
-#     # # --- Начало: Код до yield ---
-#     # # Выполняется ОДИН РАЗ при старте сервера
-#     # await connect_to_db(app)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Контекстный менеджер для управления событиями "startup" и "shutdown".
+    Это современный и надежный способ управлять ресурсами, такими как пул соединений с БД.
+    """
+    print("Lifespan starting")
+    app.state.pool = None
+    # # --- Начало: Код до yield ---
+    # # Выполняется ОДИН РАЗ при старте сервера
+    await connect_to_db(app)
 
-#     # --- Основная работа ---
-#     yield # Приложение "живет" и обрабатывает запросы
-#     print("Lifespan shutting down")
-#      # --- Завершение: Код после yield ---
-#     # Выполняется ОДИН РАЗ при остановке сервера
-#     # if app.state.pool:
-#     #     await close_db_connection(app)
+    # --- Основная работа ---
+    yield # Приложение "живет" и обрабатывает запросы
+    print("Lifespan shutting down")
+     # --- Завершение: Код после yield ---
+    # Выполняется ОДИН РАЗ при остановке сервера
+    if app.state.pool:
+        await close_db_connection(app)
 
 
 # --- 3. Создаем и настраиваем приложение ---

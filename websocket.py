@@ -1,6 +1,3 @@
-import eventlet
-eventlet.monkey_patch()
-
 # WebSocket, WebSocketDisconnect — добавляет поддержку WebSocket-протокола и обработку разрыва соединения.
 from fastapi import WebSocket, WebSocketDisconnect, APIRouter, Depends, Query, status
 from typing import Optional
