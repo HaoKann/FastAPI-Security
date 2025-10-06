@@ -1,4 +1,3 @@
-import pytest
 from jose import jwt
 from datetime import datetime, timedelta
 from fastapi.testclient import TestClient
@@ -34,8 +33,8 @@ def test_not_found(client: TestClient):
 
 def test_protected_without_token(client):
     response = client.get('/auth/protected')
-    assert response.status_code == 401
-    assert response.json() == {'detail': 'Could not validate credentials'}
+    assert response.status_code == 403
+    assert response.json() == {'detail': 'Not authenticated'}
 
 def test_protected_with_token(client):
     # Создаём тестовый токен

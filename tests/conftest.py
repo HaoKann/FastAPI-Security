@@ -2,9 +2,6 @@ import pytest
 from fastapi.testclient import TestClient
 import os
 
-
-from database import get_pool
-
 # --- 1. Настройка тестового окружения ---
 
 # Устанавливаем переменную окружения, чтобы приложение "знало",
