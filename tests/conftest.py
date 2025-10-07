@@ -20,9 +20,33 @@ except Exception as e:
 
 @pytest.fixture(scope='function')
 def db_pool(monkeypatch):
-    # Мокаем пул для тестов (например, возвращаем пустой пул)
-    def mock_get_pool(request):
-        return None # Возвращаем None как тестовый пул
+    existing_users = set() # пустое множество — пользователей ещё нет
+
+    async def mock_get_user_from_db(pool, username):
+        # Возвращаем "пользователя", если он уже зарегистрирован
+        if username in existing_users:
+            return {'username': username, 'hashed_password': 'hashed_password'}
+        return None
+    
+    async def mock_execute(conn, query, *args):
+        # Когда кто-то вызывает INSERT INTO users, добавляем юзера в список
+        if "INSERT INTO users" in query and len(args) >= 1:
+            existing_users.add(args[0])
+
+    # Мокаем get_user_from_db и execute
+    monkeypatch.setattr('auth.get_user_from_db', mock_get_user_from_db)
+    monkeypatch.setattr('asyncpg.Connection.execute', mock_execute)
+
+    # Мокаем get_pool, чтобы register мог получить соединение
+    def mock_get_pool():
+        class MockPool:
+            async def acquire(self):
+                class MockConnection:
+                    async def execute(self, query, *args):
+                        await mock_execute(self, query, *args)
+                return MockConnection()
+        return MockPool()
+    
     monkeypatch.setattr('database.get_pool', mock_get_pool)
     return None
 

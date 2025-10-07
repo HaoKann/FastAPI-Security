@@ -47,7 +47,7 @@ app = FastAPI(
     title='My Refactored FastAPI App',
     description="Это приложение демонстрирует модульную архитектуру с аутентификацией, WebSocket и фоновыми задачами.",
     version='2.0.0',
-    # lifespan=lifespan # <--- Подключаем наш менеджер жизненного цикла
+    lifespan=lifespan 
 )
 
 

@@ -1,5 +1,5 @@
 # auth.py
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 import os
 import asyncpg
 from jose import jwt, JWTError
@@ -58,13 +58,13 @@ def create_tokens(data: dict) -> dict:
     
     # Создаем access token
     to_encode_access = data.copy()
-    expire_access = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire_access = datetime.now(UTC) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode_access.update({"exp": expire_access, "type": "access"})
     access_token = jwt.encode(to_encode_access, SECRET_KEY, algorithm=ALGORITHM)
 
     # Создаем refresh token
     to_encode_refresh = data.copy()
-    expire_refresh = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    expire_refresh = datetime.now(UTC) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode_refresh.update({"exp": expire_refresh, "type": "refresh"})
     refresh_token = jwt.encode(to_encode_refresh, SECRET_KEY, algorithm=ALGORITHM)
     

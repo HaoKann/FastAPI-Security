@@ -1,5 +1,5 @@
 from jose import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from fastapi.testclient import TestClient
 
 
@@ -39,7 +39,7 @@ def test_protected_without_token(client):
 def test_protected_with_token(client):
     # Создаём тестовый токен
     to_encode = {'sub': 'testuser', 'type': 'access'}
-    expire = datetime.utcnow() + timedelta(minutes=30)
+    expire = datetime.now(UTC) + timedelta(minutes=30)
     to_encode.update({'exp': expire})
     token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
