@@ -1,3 +1,6 @@
+# conftest.py — это глобальный файл конфигурации pytest.
+# Любые фикстуры, объявленные здесь, доступны во всех тестах, без импортов.
+
 import pytest
 from fastapi.testclient import TestClient
 import os
@@ -13,43 +16,67 @@ print('Starting app import...')
 try:
     from main import app
     print('App imported successfully')
-    # --- 2. Создаем наши "помощники" (фикстуры) ---
 except Exception as e:
     print(f"Error importing app: {e}")
     raise
 
+
+
+# --- 2. Создаем наши "помощники" (фикстуры) ---
+# Фикстуры — это функции с декоратором @pytest.fixture.
+# Они создают или подготавливают нужные объекты для тестов.
+
+# scope='function' — значит, фикстура выполняется перед каждым тестом заново.
+# (Можно также scope='session', чтобы создавать один раз на все тесты.)
 @pytest.fixture(scope='function')
 def db_pool(monkeypatch):
+    # existing_users = set(), где будут храниться имена зарегистрированных пользователей.
     existing_users = set() # пустое множество — пользователей ещё нет
 
+    # mock_get_user_from_db, которая имитирует поведение реальной функции:
     async def mock_get_user_from_db(pool, username):
-        # Возвращаем "пользователя", если он уже зарегистрирован
+        print("mock_get_user_from_db вызван, pool=", type(pool))
+        # если пользователь уже существует, возвращает фейкового юзера, иначе None.
         if username in existing_users:
             return {'username': username, 'hashed_password': 'hashed_password'}
         return None
     
-    async def mock_execute(conn, query, *args):
+    # mock_execute, которое имитирует SQL-вставку в базу:
+    async def mock_execute(query, *args):
         # Когда кто-то вызывает INSERT INTO users, добавляем юзера в список
         if "INSERT INTO users" in query and len(args) >= 1:
+            # при вставке добавляет имя юзера в множество.
             existing_users.add(args[0])
-
+    
     # Мокаем get_user_from_db и execute
+    # Использует monkeypatch — встроенную фикстуру pytest, 
+    # которая позволяет временно подменять функции и атрибуты.
     monkeypatch.setattr('auth.get_user_from_db', mock_get_user_from_db)
     monkeypatch.setattr('asyncpg.Connection.execute', mock_execute)
 
-    # Мокаем get_pool, чтобы register мог получить соединение
+    
+    # Подменяет get_pool из database, чтобы приложение могло «подключаться к базе»,
+    #  но на самом деле использовало фейковый класс MockPool.
     def mock_get_pool():
         class MockPool:
             async def acquire(self):
                 class MockConnection:
                     async def execute(self, query, *args):
-                        await mock_execute(self, query, *args)
+                        await mock_execute(query, *args)
                 return MockConnection()
         return MockPool()
     
     monkeypatch.setattr('database.get_pool', mock_get_pool)
+    monkeypatch.setattr('main.pool', mock_get_pool())
+    monkeypatch.setattr('auth.pool', mock_get_pool())
     return None
 
+
+
+# Эта фикстура создаёт TestClient — встроенный инструмент FastAPI, который:
+# запускает приложение внутри Python-процесса (без uvicorn),
+# позволяет делать HTTP-запросы (client.get(), client.post() и т.д.),
+# возвращает ответы как Response объекты.
 
 @pytest.fixture(scope='function')
 def client(db_pool):

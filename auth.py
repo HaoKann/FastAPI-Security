@@ -72,6 +72,7 @@ def create_tokens(data: dict) -> dict:
 
 # --- НОВАЯ ФУНКЦИЯ-ПОМОЩНИК ---
 async def get_user_from_db(pool: asyncpg.Pool, username: str) -> dict | None:
+    print("Тип объекта pool:", type(pool))
     async with pool.acquire() as conn:
         user = await conn.fetchrow('SELECT username, hashed_password FROM users WHERE username = $1 ', username)
     return dict(user) if user else None
@@ -108,18 +109,22 @@ async def get_current_user(
 @router.post('/register', response_model=Token)
 # user: UserCreate — объект, созданный из JSON-запроса (например, {"username": "alice", "password": "password123"}).
 async def register(user_in: UserCreate, pool: asyncpg.Pool = Depends(get_pool)):
-    # Асинхронно проверяет наличие пользователя.
-    if await get_user_from_db(pool, user_in.username):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Пользователь с таким именем уже существует')
-    
-    hashed_password = get_password_hash(user_in.password)
+    try:
+        # Асинхронно проверяет наличие пользователя.
+        if await get_user_from_db(pool, user_in.username):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Пользователь с таким именем уже существует')
+        
+        hashed_password = get_password_hash(user_in.password)
     # Использует асинхронное соединение для записи.
-    async with pool.acquire() as conn:
-        await conn.execute(
-            'INSERT INTO users (username, hashed_password) VALUES ($1, $2)',
-            user_in.username, hashed_password
-        )
-    return create_tokens(data={'sub': user_in.username})
+        async with pool.acquire() as conn:
+            await conn.execute(
+                'INSERT INTO users (username, hashed_password) VALUES ($1, $2)',
+                user_in.username, hashed_password
+            )
+        return create_tokens(data={'sub': user_in.username})
+    except Exception as e:
+        print('Ошибка в register', e)
+        raise
 
 
 # Эндпоинт для получения токена
