@@ -55,21 +55,41 @@ def db_pool(monkeypatch):
     monkeypatch.setattr('asyncpg.Connection.execute', mock_execute)
 
     
-    # Подменяет get_pool из database, чтобы приложение могло «подключаться к базе»,
-    #  но на самом деле использовало фейковый класс MockPool.
+    # mock_get_pool() — это фейковая (тестовая) замена реального пула соединений с базой (asyncpg.Pool).
     def mock_get_pool():
+        # MockConnection — имитирует одно соединение.
+        class MockConnection:
+            # имитирует conn.fetchrow(...)
+            async def fetchrow(self, query, *args):
+                # Эмуляция запроса к БД
+                return None
+            
+            # имитирует conn.execute(...)
+            async def execute(self, query, *args):
+                # Эмуляция выполнения запроса
+                return "OK"
+            
+            # async def __aenter__ и async def __aexit__ — позволяют использовать объект в async with (контекстный менеджер)
+            async def __aenter__(self):
+                return self
+            
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+            
+        # MockPool — имитирует пул соединений:
         class MockPool:
             async def acquire(self):
-                class MockConnection:
-                    async def execute(self, query, *args):
-                        await mock_execute(query, *args)
                 return MockConnection()
+            
+            async def __aenter__(self):
+                return self
+            
+            async def __aexit__(self, exc_type, exc, tb):
+                pass
+        
         return MockPool()
     
     monkeypatch.setattr('database.get_pool', mock_get_pool)
-    monkeypatch.setattr('main.pool', mock_get_pool())
-    monkeypatch.setattr('auth.pool', mock_get_pool())
-    return None
 
 
 
