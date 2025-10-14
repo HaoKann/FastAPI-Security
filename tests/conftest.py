@@ -26,7 +26,7 @@ except Exception as e:
 # Фикстуры — это функции с декоратором @pytest.fixture.
 # Они создают или подготавливают нужные объекты для тестов.
 
-# scope='function' — значит, фикстура выполняется перед каждым тестом заново.
+# scope='function' — значит, фикстура выполняется перед каждым тестом заново и "сбрасывается" после него.
 # (Можно также scope='session', чтобы создавать один раз на все тесты.)
 @pytest.fixture(scope='function')
 def db_pool(monkeypatch):
@@ -41,32 +41,30 @@ def db_pool(monkeypatch):
             return {'username': username, 'hashed_password': 'hashed_password'}
         return None
     
-    # mock_execute, которое имитирует SQL-вставку в базу:
-    async def mock_execute(query, *args):
-        # Когда кто-то вызывает INSERT INTO users, добавляем юзера в список
-        if "INSERT INTO users" in query and len(args) >= 1:
-            # при вставке добавляет имя юзера в множество.
-            existing_users.add(args[0])
+    # Вспомогательная функция для выполнения INSERT в "памяти"
+    async def do_insert(username):
+        existing_users.add(username)
     
-    # Мокаем get_user_from_db и execute
-    # Использует monkeypatch — встроенную фикстуру pytest, 
-    # которая позволяет временно подменять функции и атрибуты.
-    monkeypatch.setattr('auth.get_user_from_db', mock_get_user_from_db)
-    monkeypatch.setattr('asyncpg.Connection.execute', mock_execute)
 
-    
+    # Фейковый пул и соединение
     # mock_get_pool() — это фейковая (тестовая) замена реального пула соединений с базой (asyncpg.Pool).
     def mock_get_pool():
         # MockConnection — имитирует одно соединение.
         class MockConnection:
             # имитирует conn.fetchrow(...)
             async def fetchrow(self, query, *args):
-                # Эмуляция запроса к БД
+                # Эмулируем SELECT username, hashed_password FROM users WHERE username = $1
+                if args and args[0] in existing_users:
+                    return {'username': args[0], 'hashed_password': 'hashed_password'}
                 return None
+
             
             # имитирует conn.execute(...)
             async def execute(self, query, *args):
-                # Эмуляция выполнения запроса
+                # Эмулируем INSERT INTO users (username, hashed_password) VALUES ($1, $2)
+                if isinstance(query, str) and "INSERT INTO users" in query and len(args) >= 1:
+                    await do_insert(args[0])
+                    return "OK"
                 return "OK"
             
             # async def __aenter__ и async def __aexit__ — позволяют использовать объект в async with (контекстный менеджер)
@@ -89,7 +87,13 @@ def db_pool(monkeypatch):
         
         return MockPool()
     
+    # Подменяем реальные функции/объекты
+    monkeypatch.setattr('auth.get_user_from_db', mock_get_user_from_db)
+    # Подменяем get_pool (функцию) — приложение вызывает get_pool() и получит MockPool
     monkeypatch.setattr('database.get_pool', mock_get_pool)
+
+    # Фикстура db_pool не обязана возвращать объект — она просто настраивает окружение (патчит модули)
+    return None
 
 
 
@@ -97,7 +101,6 @@ def db_pool(monkeypatch):
 # запускает приложение внутри Python-процесса (без uvicorn),
 # позволяет делать HTTP-запросы (client.get(), client.post() и т.д.),
 # возвращает ответы как Response объекты.
-
 @pytest.fixture(scope='function')
 def client(db_pool):
     """
@@ -112,9 +115,3 @@ def client(db_pool):
         print('TestClient created')
         yield test_client
         print('TestClient closed')
-
-        # Код после `yield` выполнится после того, как все тесты в файле завершатся.
-        # Здесь можно было бы, например, очищать тестовые данные.
-
-# В будущем мы будем добавлять сюда другие фикстуры, 
-# например, для создания тестового пользователя в базе данных.
