@@ -1,6 +1,5 @@
 # Управление соединением с базой данных.
 
-import os
 import asyncpg
 from fastapi import Request
 

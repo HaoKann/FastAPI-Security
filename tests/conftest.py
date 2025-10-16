@@ -92,6 +92,10 @@ def db_pool(monkeypatch):
     # Подменяем get_pool (функцию) — приложение вызывает get_pool() и получит MockPool
     monkeypatch.setattr('database.get_pool', mock_get_pool)
 
+    # Добавляем фейковый пул прямо в приложение
+    from main import app
+    app.state.pool = mock_get_pool()
+
     # Фикстура db_pool не обязана возвращать объект — она просто настраивает окружение (патчит модули)
     return None
 

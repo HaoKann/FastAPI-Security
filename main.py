@@ -26,17 +26,24 @@ async def lifespan(app: FastAPI):
     Это современный и надежный способ управлять ресурсами, такими как пул соединений с БД.
     """
     print("Lifespan starting")
-    app.state.pool = None
+    
     # # --- Начало: Код до yield ---
     # # Выполняется ОДИН РАЗ при старте сервера
-    await connect_to_db(app)
+    app.state.pool = None
+    # Если в тестовом режиме — НЕ создаём реальный пул
+    if os.getenv("TESTING") != "True":
+        print("Connecting to database...")
+        await connect_to_db(app)
+    else:
+        print("TESTING mode: skipping DB connect")
 
     # --- Основная работа ---
     yield # Приложение "живет" и обрабатывает запросы
-    print("Lifespan shutting down")
-     # --- Завершение: Код после yield ---
+
+    # --- Завершение: Код после yield ---
     # Выполняется ОДИН РАЗ при остановке сервера
-    if app.state.pool:
+    print("Lifespan shutting down")
+    if os.getenv("TESTING") != True and app.state.pool:
         await close_db_connection(app)
 
 
