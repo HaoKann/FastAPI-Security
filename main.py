@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
     # # Выполняется ОДИН РАЗ при старте сервера
     app.state.pool = None
     # Если в тестовом режиме — НЕ создаём реальный пул
-    if os.getenv("TESTING") != "True":
+    if os.getenv("TESTING") == "False":
         print("Connecting to database...")
         await connect_to_db(app)
     else:

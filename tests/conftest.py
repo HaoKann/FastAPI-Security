@@ -26,12 +26,16 @@ except Exception as e:
 # Фикстуры — это функции с декоратором @pytest.fixture.
 # Они создают или подготавливают нужные объекты для тестов.
 
+
+# Хранение имён зарегистрированных пользователей между вызовами mock-функций
+existing_users = set() # пустое множество — пользователей ещё нет
+
 # scope='function' — значит, фикстура выполняется перед каждым тестом заново и "сбрасывается" после него.
 # (Можно также scope='session', чтобы создавать один раз на все тесты.)
 @pytest.fixture(scope='function')
 def db_pool(monkeypatch):
-    # existing_users = set(), где будут храниться имена зарегистрированных пользователей.
-    existing_users = set() # пустое множество — пользователей ещё нет
+    global existing_users
+    existing_users.clear()  # очищаем перед каждым тестом
 
     # mock_get_user_from_db, которая имитирует поведение реальной функции:
     async def mock_get_user_from_db(pool, username):
@@ -42,7 +46,7 @@ def db_pool(monkeypatch):
         return None
     
     # Вспомогательная функция для выполнения INSERT в "памяти"
-    async def do_insert(username):
+    async def mock_insert_user(pool, username, hashed_password):
         existing_users.add(username)
     
 
@@ -63,7 +67,7 @@ def db_pool(monkeypatch):
             async def execute(self, query, *args):
                 # Эмулируем INSERT INTO users (username, hashed_password) VALUES ($1, $2)
                 if isinstance(query, str) and "INSERT INTO users" in query and len(args) >= 1:
-                    await do_insert(args[0])
+                    await mock_insert_user(None, args[0], None)
                     return "OK"
                 return "OK"
             
@@ -95,6 +99,15 @@ def db_pool(monkeypatch):
     # Добавляем фейковый пул прямо в приложение
     from main import app
     app.state.pool = mock_get_pool()
+
+    # Принудительно подменяем get_pool() на возвращение MockPool()
+    from database import get_pool as real_get_pool
+    async def fake_get_pool():
+        return mock_get_pool()
+    
+    monkeypatch.setattr('auth.get_pool', fake_get_pool)
+    app.dependency_overrides[real_get_pool] = fake_get_pool
+
 
     # Фикстура db_pool не обязана возвращать объект — она просто настраивает окружение (патчит модули)
     return None

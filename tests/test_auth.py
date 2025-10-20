@@ -27,7 +27,7 @@ def test_register_user_already_exists(client: TestClient):
     }
 
     # Шаг 2: Регистрируем его в первый раз (ожидаем успеха)
-    response1 = client.post('/auth/register', json=user_data )
+    response1 = client.post('/auth/register', json=user_data)
     assert response1.status_code == status.HTTP_200_OK
 
     # Шаг 3: Пытаемся зарегистрировать его еще раз с теми же данными
