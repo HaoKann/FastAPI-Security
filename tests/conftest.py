@@ -37,6 +37,8 @@ def db_pool(monkeypatch):
     global existing_users
     existing_users.clear()  # очищаем перед каждым тестом
 
+    
+
     # mock_get_user_from_db, которая имитирует поведение реальной функции:
     async def mock_get_user_from_db(pool, username):
         print("mock_get_user_from_db вызван, pool=", type(pool))
@@ -91,6 +93,24 @@ def db_pool(monkeypatch):
         
         return MockPool()
     
+    # Эта "обманка" будет имитировать проверку пароля
+    def mock_verify_password(plain_password, hashed_password):
+        print(f"mock_verify_password вызвана: '{plain_password}' vs '{hashed_password}")
+        # Мы знаем, что наш фейковый хеш - это 'hashed_password'
+        # А "правильный" пароль мы будем использовать в тестах "strongpassword123"
+        if hashed_password == 'hashed_password' and plain_password == 'strongpassword123':
+            return True
+        # Если пароль другой, проверка не пройдена
+        return False
+
+    # "Подменяем" настоящую функцию проверки пароля на нашу "обманку"
+    try:
+        monkeypatch.setattr('auth.verify_password', mock_verify_password)
+        print("Mocking 'auth.hashing.verufy_password' successful")
+    except (ImportError, AttributeError):
+        print("!!! Не удалось найти 'auth.hashing.verify_password'.")
+        print("!!! Проверь путь и название твоей функции верификации пароля.")
+
     # Подменяем реальные функции/объекты
     monkeypatch.setattr('auth.get_user_from_db', mock_get_user_from_db)
     # Подменяем get_pool (функцию) — приложение вызывает get_pool() и получит MockPool
@@ -102,6 +122,7 @@ def db_pool(monkeypatch):
 
     # Принудительно подменяем get_pool() на возвращение MockPool()
     from database import get_pool as real_get_pool
+    
     async def fake_get_pool():
         return mock_get_pool()
     

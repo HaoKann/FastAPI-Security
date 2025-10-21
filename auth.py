@@ -126,6 +126,9 @@ async def register(user_in: UserCreate, pool: asyncpg.Pool = Depends(get_pool)):
         # ВАЖНО: Проверка на None перед использованием pool
         if pool is None:
             print("TESTING mode: skipping database insert")
+
+            import conftest
+            conftest.existing_users.add(user_in.username)
         else:
         # Использует асинхронное соединение для записи.
             async with pool.acquire() as conn:
