@@ -106,10 +106,11 @@ def db_pool(monkeypatch):
     # "Подменяем" настоящую функцию проверки пароля на нашу "обманку"
     try:
         monkeypatch.setattr('auth.verify_password', mock_verify_password)
-        print("Mocking 'auth.hashing.verufy_password' successful")
+        print("Mocking 'auth.hashing.verify_password' successful")
     except (ImportError, AttributeError):
         print("!!! Не удалось найти 'auth.hashing.verify_password'.")
         print("!!! Проверь путь и название твоей функции верификации пароля.")
+
 
     # Подменяем реальные функции/объекты
     monkeypatch.setattr('auth.get_user_from_db', mock_get_user_from_db)
