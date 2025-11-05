@@ -48,7 +48,7 @@ def db_pool(monkeypatch):
         return None
     
     # Вспомогательная функция для выполнения INSERT в "памяти"
-    async def mock_insert_user(pool, username, hashed_password):
+    async def mock_insert_user(username):
         existing_users.add(username)
     
 
@@ -69,15 +69,26 @@ def db_pool(monkeypatch):
             async def execute(self, query, *args):
                 # Эмулируем INSERT INTO users (username, hashed_password) VALUES ($1, $2)
                 if isinstance(query, str) and "INSERT INTO users" in query and len(args) >= 1:
-                    await mock_insert_user(None, args[0], None)
+                    
+                    # === ГЛАВНОЕ ИСПРАВЛЕНИЕ ===
+                    # Получаем доступ к "фейковой" БД
+                    global existing_users
+
+                    # Добавляем пользователя (первый аргумент, $1)
+                    existing_users.add(args[0])
+
+                    print(f"TESTING mode: User '{args[0]}' УСПЕШНО ДОБАВЛЕН в mock DB.")
                     return "OK"
+                    
+                # Если это был не INSERT, то просто выводим лог
+                print(f"TESTING mode: (Query: '{query[:30]}...') - не INSERT пользователя, пропускаем.")
                 return "OK"
             
             # async def __aenter__ и async def __aexit__ — позволяют использовать объект в async with (контекстный менеджер)
             async def __aenter__(self):
                 return self
             
-            async def __aexit__(self, exc_type, exc, tb):
+            async def __aexit__(self, *args):
                 pass
             
         # MockPool — имитирует пул соединений:
@@ -88,7 +99,7 @@ def db_pool(monkeypatch):
             async def __aenter__(self):
                 return self
             
-            async def __aexit__(self, exc_type, exc, tb):
+            async def __aexit__(self, *args):
                 pass
         
         return MockPool()
@@ -106,7 +117,7 @@ def db_pool(monkeypatch):
     # "Подменяем" настоящую функцию проверки пароля на нашу "обманку"
     try:
         monkeypatch.setattr('auth.verify_password', mock_verify_password)
-        print("Mocking 'auth.hashing.verify_password' successful")
+        print("Mocking 'auth.verify_password' successful")
     except (ImportError, AttributeError):
         print("!!! Не удалось найти 'auth.hashing.verify_password'.")
         print("!!! Проверь путь и название твоей функции верификации пароля.")

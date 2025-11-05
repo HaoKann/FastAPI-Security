@@ -1,7 +1,7 @@
 from jose import jwt
 from datetime import datetime, timedelta, UTC
 from fastapi.testclient import TestClient
-
+from starlette import status
 
 SECRET_KEY = '26e73ab713b6d22c1b45a5f0db904c961f2ccd65d0541fb04a938a5c44e23c7f'
 ALGORITHM= 'HS256'
@@ -48,3 +48,33 @@ def test_protected_with_token(client):
     assert response.json() == {'message': 'Привет, testuser! Это защищенная зона'}
 
 
+def test_protected_with_invalid_token(client: TestClient):
+    """
+    Проверяет, что эндпоинт /protected возвращает 401,
+    если прислать поддельный (невалидный) токен.
+    """
+
+    # --- Шаг 1: Придумываем поддельный токен ---
+    # Нам не нужно регистрироваться или логиниться. 
+    # Мы просто берем строку, которая *похожа* на токен,
+    # но которую твой сервер точно не подписывал.
+    invalid_token = "ueiruiewruiewgrigewirgbewrgewhjrewrhwerhieuwhriwehrwe3123122"
+
+    # --- Шаг 2: Формируем заголовки ---
+    headers = {
+        "Authorization": f"Bearer {invalid_token}"
+    }
+
+    # --- Шаг 3: Делаем запрос к /protected с поддельным токеном ---
+    response_protected = client.get('/protected', headers=headers)
+
+    # --- Шаг 4: Проверяем, что нас не пустили ---
+    # Ожидаем ошибку 401 Unauthorized
+    assert response_protected.status_code == status.HTTP_401_UNAUTHORIZED
+
+    # (Опционально) Проверяем тело ошибки, если твой get_current_user
+    # возвращает конкретное сообщение
+    data = response_protected.json()
+    assert "detail" in data
+    # Например, если у тебя там "Could not validate credentials"
+    # assert data["detail"] == "Could not validate credentials"

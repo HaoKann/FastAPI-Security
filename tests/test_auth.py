@@ -38,7 +38,6 @@ def test_register_user_already_exists(client: TestClient):
     assert response2.json() == {'detail': 'Пользователь с таким именем уже существует'}
 
 
-
 def test_login_success(client: TestClient):
     """
     Тест успешного входа в систему.
