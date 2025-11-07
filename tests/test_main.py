@@ -66,7 +66,7 @@ def test_protected_with_invalid_token(client: TestClient):
     }
 
     # --- Шаг 3: Делаем запрос к /protected с поддельным токеном ---
-    response_protected = client.get('/protected', headers=headers)
+    response_protected = client.get('/auth/protected', headers=headers)
 
     # --- Шаг 4: Проверяем, что нас не пустили ---
     # Ожидаем ошибку 401 Unauthorized
