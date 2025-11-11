@@ -28,7 +28,6 @@ class ProductCreate(BaseModel):
 
 
 # --- Эндпоинты ---
-
 # Защищённый эндпоинт, который возвращает список продуктов, принадлежащих текущему пользователю.
 @router.get('/', response_model=List[Product])
 async def get_products(current_user: dict = Depends(get_current_user), pool: asyncpg.Pool = Depends(get_pool)):
@@ -48,7 +47,6 @@ async def get_products(current_user: dict = Depends(get_current_user), pool: asy
                 raise HTTPException(status_code=500, detail=f'Ошибка при получении продуктов {str(e)}')
            
 
-
 # Защищённый эндпоинт для создания нового продукта, доступный только авторизованным пользователям.
 # ИСПРАВЛЕНО: Эндпоинт теперь принимает Pydantic-модель ProductCreate
 @router.post('/', response_model=Product)
@@ -63,7 +61,7 @@ async def create_product(product_data: ProductCreate, background_tasks: Backgrou
                     product_data.name, product_data.price, username
                 )
                 if not new_product_record:
-                     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail= 'Не удалось создать продукт')            
+                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail= 'Не удалось создать продукт')            
 
                 new_product = Product(**dict(new_product_record))
                 background_tasks.add_task(manager.broadcast, f"Новый продукт: {new_product.json()}")
