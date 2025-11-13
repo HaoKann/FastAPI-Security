@@ -97,4 +97,4 @@ def test_create_product_unauthenticated(client: TestClient):
 
     # Ожидаем 401 Unauthorized (Нет доступа)
     assert response.status_code == status.HTTP_403_FORBIDDEN
-
+ 

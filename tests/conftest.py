@@ -1,6 +1,7 @@
 # conftest.py — это глобальный файл конфигурации pytest.
 # Любые фикстуры, объявленные здесь, доступны во всех тестах, без импортов.
 
+
 import pytest
 from fastapi.testclient import TestClient
 import os
@@ -101,21 +102,22 @@ def db_pool(monkeypatch):
             
             # имитирует conn.execute(...)
             async def execute(self, query, *args):
+
+                print(f"\n--- DEBUG execute: Получен SQL: {query[:50]}... Аргументы: {args}")
+
                 # Эмулируем INSERT INTO users (username, hashed_password) VALUES ($1, $2)
                 if isinstance(query, str) and "INSERT INTO users" in query and len(args) >= 1:
                     
                     # === ГЛАВНОЕ ИСПРАВЛЕНИЕ ===
                     # Получаем доступ к "фейковой" БД
                     global existing_users
-
-                    # Добавляем пользователя (первый аргумент, $1)
+                    # Добавляем пользователя
                     existing_users.add(args[0])
-
-                    print(f"TESTING mode: User '{args[0]}' УСПЕШНО ДОБАВЛЕН в mock DB.")
+                    print(f"!!! УСПЕХ: User '{args[0]}' добавлен в mock DB.")
                     return "OK"
                     
                 # Если это был не INSERT, то просто выводим лог
-                print(f"TESTING mode: (Query: '{query[:30]}...') - не INSERT пользователя, пропускаем.")
+                print(f"!!! ПРОВАЛ: (Query: '{query[:30]}...') - не распознан как INSERT пользователя, пропускаем.")
                 return "OK"
             
             # async def __aenter__ и async def __aexit__ — позволяют использовать объект в async with (контекстный менеджер)
@@ -171,7 +173,7 @@ def db_pool(monkeypatch):
     
     async def fake_get_pool():
         return mock_get_pool()
-    
+
     monkeypatch.setattr('auth.get_pool', fake_get_pool)
     app.dependency_overrides[real_get_pool] = fake_get_pool
 

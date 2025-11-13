@@ -123,19 +123,12 @@ async def register(user_in: UserCreate, pool: asyncpg.Pool = Depends(get_pool)):
         
         hashed_password = get_password_hash(user_in.password)
 
-        # ВАЖНО: Проверка на None перед использованием pool
-        if pool is None:
-            print("TESTING mode: skipping database insert")
-
-            import conftest
-            conftest.existing_users.add(user_in.username)
-        else:
         # Использует асинхронное соединение для записи.
-            async with pool.acquire() as conn:
-                await conn.execute(
-                    'INSERT INTO users (username, hashed_password) VALUES ($1, $2)',
-                    user_in.username, hashed_password
-                )
+        async with pool.acquire() as conn:
+            await conn.execute(
+                'INSERT INTO users (username, hashed_password) VALUES ($1, $2)',
+                user_in.username, hashed_password
+            )
                 
         return create_tokens(data={'sub': user_in.username})
     except Exception as e:
