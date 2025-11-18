@@ -48,12 +48,15 @@ def db_pool(monkeypatch):
 
     # mock_get_user_from_db, которая имитирует поведение реальной функции:
     async def mock_get_user_from_db(pool, username):
-        print("mock_get_user_from_db вызван, pool=", type(pool))
         # если пользователь уже существует, возвращает фейкового юзера, иначе None.
         if username in existing_users:
             return {'username': username, 'hashed_password': 'hashed_password'}
         return None
     
+    # Эта "обманка" будет имитировать проверку пароля
+    def mock_verify_password(plain_password, hashed_password):
+        return hashed_password == "hashed_password" and plain_password == 'strongpassword123'
+
     # Вспомогательная функция для выполнения INSERT в "памяти"
     async def mock_insert_user(username):
         existing_users.add(username)
@@ -70,54 +73,35 @@ def db_pool(monkeypatch):
 
                 if "INSERT INTO products" in query:
                     new_product = {
-                        "id": fake_product_id_counter,
-                        "name": args[0],
-                        "price": args[1],
-                        "owner_username": args[2]
+                        "id": fake_product_id_counter, "name": args[0],
+                        "price": args[1], "owner_username": args[2]
                     }
                     fake_products_db.append(new_product)
                     fake_product_id_counter += 1
                     print(f"TESTING mode: Продукт '{new_product['name']}' добавлен в mock DB.")
                     return new_product
-                
-                # --- Старый код для get_user_from_db ---
+                # Логика для поиска пользователя
                 if "SELECT" in query and "users" in query:
                     if args and args[0] in existing_users:
                         return {'username': args[0], 'hashed_password': 'hashed_password'}
-                
-                print(f"TESTING mode: mock fetchrow получил неизвестный запрос: {query[:30]}...")
                 return None
             
             # имитирует conn.fetch(...)
             async def fetch(self, query, *args):
-                if "SELECT" in query and "products" in query and "WHERE owner_username" in query:
-                    owner_username = args[0]
-                    # Ищем в фейковой базе
-                    user_products = [p for p in fake_products_db if p["owner_username"] == owner_username]
-                    print(f"TESTING mode: Найдены продукты для '{owner_username}': {len(user_products)} шт. ")
-                    return user_products
-                
-                print(f"TESTING mode: mock fetch получил неизвестный запрос: {query[:30]}...")
+                if "SELECT" in query and "products" in query:
+                   return [p for p in fake_products_db if p["owner_username"] == args[0]]
                 return []
             
             # имитирует conn.execute(...)
             async def execute(self, query, *args):
-
-                print(f"\n--- DEBUG execute: Получен SQL: {query[:50]}... Аргументы: {args}")
-
                 # Эмулируем INSERT INTO users (username, hashed_password) VALUES ($1, $2)
-                if isinstance(query, str) and "INSERT INTO users" in query and len(args) >= 1:
-                    
-                    # === ГЛАВНОЕ ИСПРАВЛЕНИЕ ===
+                if isinstance(query, str) and "INSERT INTO users" in query:
                     # Получаем доступ к "фейковой" БД
                     global existing_users
                     # Добавляем пользователя
                     existing_users.add(args[0])
                     print(f"!!! УСПЕХ: User '{args[0]}' добавлен в mock DB.")
                     return "OK"
-                    
-                # Если это был не INSERT, то просто выводим лог
-                print(f"!!! ПРОВАЛ: (Query: '{query[:30]}...') - не распознан как INSERT пользователя, пропускаем.")
                 return "OK"
             
             # async def __aenter__ и async def __aexit__ — позволяют использовать объект в async with (контекстный менеджер)
@@ -129,7 +113,7 @@ def db_pool(monkeypatch):
             
         # MockPool — имитирует пул соединений:
         class MockPool:
-            async def acquire(self):
+            def acquire(self):
                 return MockConnection()
             
             async def __aenter__(self):
@@ -140,46 +124,27 @@ def db_pool(monkeypatch):
         
         return MockPool()
     
-    # Эта "обманка" будет имитировать проверку пароля
-    def mock_verify_password(plain_password, hashed_password):
-        print(f"mock_verify_password вызвана: '{plain_password}' vs '{hashed_password}")
-        # Мы знаем, что наш фейковый хеш - это 'hashed_password'
-        # А "правильный" пароль мы будем использовать в тестах "strongpassword123"
-        if hashed_password == 'hashed_password' and plain_password == 'strongpassword123':
-            return True
-        # Если пароль другой, проверка не пройдена
-        return False
 
-    # "Подменяем" настоящую функцию проверки пароля на нашу "обманку"
-    try:
-        monkeypatch.setattr('auth.verify_password', mock_verify_password)
-        print("Mocking 'auth.verify_password' successful")
-    except (ImportError, AttributeError):
-        print("!!! Не удалось найти 'auth.hashing.verify_password'.")
-        print("!!! Проверь путь и название твоей функции верификации пароля.")
-
-
-    # Подменяем реальные функции/объекты
+    # ПРИМЕНЯЕМ ПОДМЕНЫ 
+    # А. Подменяем функции внутри auth.py
     monkeypatch.setattr('auth.get_user_from_db', mock_get_user_from_db)
-    # Подменяем get_pool (функцию) — приложение вызывает get_pool() и получит MockPool
-    monkeypatch.setattr('database.get_pool', mock_get_pool)
-
-    # Добавляем фейковый пул прямо в приложение
-    from main import app
-    app.state.pool = mock_get_pool()
-
-    # Принудительно подменяем get_pool() на возвращение MockPool()
-    from database import get_pool as real_get_pool
+    try:
+        # "Подменяем" настоящую функцию проверки пароля на нашу "обманку"
+        monkeypatch.setattr('auth.verify_password', mock_verify_password)
+    except AttributeError:
+        monkeypatch.setattr('auth.verify_password', mock_verify_password)
     
-    async def fake_get_pool():
-        return mock_get_pool()
+    # Б. Подменяем ЗАВИСИМОСТЬ (Depends) во всем приложении
+    # Это заменяет get_pool на mock_get_pool везде, где есть Depends(get_pool)
+    from database import get_pool as original_get_pool
+    from main import app
 
-    monkeypatch.setattr('auth.get_pool', fake_get_pool)
-    app.dependency_overrides[real_get_pool] = fake_get_pool
+    app.dependency_overrides[original_get_pool] = mock_get_pool
 
+    # Фикстура завершает работу
+    yield # Используем yield, чтобы фикстура "жила", пока идет тест
 
-    # Фикстура db_pool не обязана возвращать объект — она просто настраивает окружение (патчит модули)
-    return None
+    app.dependency_overrides = {}
 
 
 

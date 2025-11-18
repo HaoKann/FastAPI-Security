@@ -64,7 +64,7 @@ async def create_product(product_data: ProductCreate, background_tasks: Backgrou
                     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail= 'Не удалось создать продукт')            
 
                 new_product = Product(**dict(new_product_record))
-                background_tasks.add_task(manager.broadcast, f"Новый продукт: {new_product.json()}")
+                background_tasks.add_task(manager.broadcast, f"Новый продукт: {new_product.model_dump_json()}")
                 return new_product
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Ошибка создания продукта: {str(e)}")
