@@ -27,7 +27,6 @@ def test_create_product(client: TestClient, auth_headers: dict):
     """
     Тест: POST /products (успешное создание продукта)
     Проверяем, что пользователь может создать продукт.
-
     """
     # 1. Готовим данные для нового продукта
     product_data = {
