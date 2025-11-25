@@ -62,15 +62,18 @@ app = FastAPI(
 # Используем app.include_router(), чтобы подключить все эндпоинты из наших модулей.
 # FastAPI автоматически обработает префиксы (например, /auth, /compute), которые мы задали в каждом роутере.
 
+# 1. Сначала импортируем роутеры (всегда)
+from websocket import router as websocket_router
 # Подключаем только необходимые роутеры для тестов
+# bg_tasks пока можно оставить под условием, если не нужно их тестировать
 if os.getenv('TESTING') != 'True':
     from bg_tasks import router as tasks_router
-    from websocket import router as websocket_router
     app.include_router(tasks_router)
-    app.include_router(websocket_router)
 
+# 2. Подключаем основные роутеры (ВСЕГДА)
 app.include_router(auth_router)
 app.include_router(products_router)
+app.include_router(websocket_router)
 
 
 # --- 5. Корневой эндпоинт (опционально) ---

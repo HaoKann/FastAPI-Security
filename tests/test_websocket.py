@@ -4,6 +4,7 @@ from auth import create_tokens
 
 # --- Тест 1: Успешное подключение к WebSocket ---
 def test_websocket_connect_success(client: TestClient):
+    # --- ЭТАП 1: Подготовка данных (Arrange) ---
     """
     Проверяет, что можно подключиться к WebSocket с валидным токеном.
     """
@@ -20,11 +21,15 @@ def test_websocket_connect_success(client: TestClient):
     response = client.post('/auth/login', data=login_data)
     token = response.json()["access_token"]
 
+    # --- ЭТАП 2: Рукопожатие (Handshake) ---
+
     # 2. Подключаемся к WebSocket
     # Обрати внимание: токен передается в Query параметре (?token=...)
     with client.websocket_connect(f"/ws/notifications?token={token}") as websocket:
         # Мы ожидаем получить приветственное сообщение (broadcast)
         # "Клиент ws_user подключился к уведомлениям"
+        
+        # --- ЭТАП 3: Взаимодействие (Act & Assert) ---
         data = websocket.receive_text()
         assert "Клиент ws_chat подключился" in data
 

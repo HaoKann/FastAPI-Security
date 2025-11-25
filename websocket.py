@@ -48,50 +48,62 @@ manager = ConnectionManager()
 
 # --- Эндпоинты WebSocket ---
 
+
+# Эндпоинт для получения уведомлений от сервера (например, о завершении фоновых задач). Клиент подключается и слушает.
 @router.websocket('/ws/notifications')
 async def websocket_notification(
     websocket: WebSocket,
-    token: str = Query(...)
+    token: str = Query(...),
+    pool: asyncpg.Pool = Depends(get_pool)
 ):
-    # ИСПРАВЛЕНО: Получаем пул напрямую из websocket
-    pool: asyncpg.Pool = websocket.app.state.pool
+    try:
+        username: Optional[str] = None
 
-    """
-    Эндпоинт для получения уведомлений от сервера (например, о завершении фоновых задач).
-    Клиент подключается и слушает.
-    """
-    username: Optional[str] = None
-    try:
-        # Шаг 1: Проверяем токен
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]) 
-        if payload.get('type') != 'access':
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason='Invalid token type')
+        try:
+            # Шаг 1: Проверяем токен
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]) 
+            if payload.get('type') != 'access':
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason='Invalid token type')
+                return
+            
+            # Шаг 2: Проверяем пользователя
+            username = payload.get('sub')
+            print(f"DEBUG WS: Token decoded for user: {username}")
+
+            # Мы закрываем соединение, если имя пользователя не найдено ИЛИ
+            # если функция get_user_from_db вернула None (т.е. not await...).
+            if not username or not await get_user_from_db(pool, username):
+                print("DEBUG WS: User not found in DB")
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason='User not found')
+                return
+            
+        except JWTError as e:
+            print(f"DEBUG WS: JWT Error: {e}")
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason='Invalid or expired token')
             return
         
-        # Шаг 2: Проверяем пользователя
-        username = payload.get('sub')
-        # Мы закрываем соединение, если имя пользователя не найдено ИЛИ
-        # если функция get_user_from_db вернула None (т.е. not await...).
-        if not username or not await get_user_from_db(pool, username):
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason='User not found')
-            return
-        
-    except JWTError:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason='Invalid or expired token')
-        return
-    
-    # Шаг 3: Если все проверки пройдены, подключаем клиента
-    await manager.connect(websocket)
-    await manager.broadcast(f'Клиент {username} подключился к уведомлениям')
-    try:
-        # Бесконечный цикл для поддержания соединения
-        while True:
-            # Просто ждем, пока соединение не будет разорвано.
-            # Мы не ожидаем сообщений от клиента на этом эндпоинте.
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-        await manager.broadcast(f'Клиент {username} отключился')
+        # Шаг 3: Если все проверки пройдены, подключаем клиента
+        await manager.connect(websocket)
+        print(f"DEBUG WS: Client {username} connected to manager")
+
+        await manager.broadcast(f'Клиент {username} подключился к уведомлениям')
+        try:
+            # Бесконечный цикл для поддержания соединения
+            while True:
+                # Просто ждем, пока соединение не будет разорвано.
+                # Мы не ожидаем сообщений от клиента на этом эндпоинте.
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            manager.disconnect(websocket)
+            await manager.broadcast(f'Клиент {username} отключился')
+
+    except Exception as e:
+        print(f"!!! CRITICAL WS ERROR: {e}")
+        import traceback
+        traceback.print_exc() # Печатаем полный след ошибки
+        # Пытаемся закрыть, если еще не закрыто
+        try: await websocket.close()
+        except: pass
 
 
 @router.websocket('/ws/chat')

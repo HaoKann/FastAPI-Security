@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 import os
 from starlette import status
+from websocket import manager
 
 # --- 1. Настройка тестового окружения ---
 
@@ -45,6 +46,7 @@ def db_pool(monkeypatch):
     existing_users.clear()  # очищаем перед каждым тестом
     fake_products_db.clear()
     fake_product_id_counter = 1
+    manager.active_connections = []
 
     # mock_get_user_from_db, которая имитирует поведение реальной функции:
     async def mock_get_user_from_db(pool, username):
