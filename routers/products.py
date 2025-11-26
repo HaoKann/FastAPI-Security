@@ -69,3 +69,43 @@ async def create_product(product_data: ProductCreate, background_tasks: Backgrou
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Ошибка создания продукта: {str(e)}")
             
+
+# Эндпоинт для удаления продукта
+@router.delete('/{product_id}', status_code=status.HTTP_204_NO_CONTENT)
+async def delete_product(
+    product_id: id,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_pool)
+):
+    """Удаляет продукт по ID. Только владелец может удалить свой продукт."""
+    username = current_user['username']
+
+    async with pool.acquire() as conn:
+        try:
+            # 1. Проверяем, существует ли продукт и кто его владелец
+            product_row = await conn.fetchrow(
+                "SELECT owner_username FROM products WHERE id = $1",
+                product_id
+            )
+
+            if not product_row:
+                raise HTTPException(status_code=404, detail="Продукт не найден")
+            
+            # 2. Проверяем права (только владелец может удалить)
+            if product_row['owner_username'] != username:
+                raise HTTPException(status_code=403, detail="Вы не можете удалить чужой продукт")
+            
+            # 3. Удаляем
+            await conn.execute("DELETE FROM products WHERE id = $1", product_id)
+
+            # 4. Отправляем уведомление
+            background_tasks.add_task(manager.broadcast, f"Продукт ID {product_id} был удален пользователем {username}")
+
+            # Возвращаем 204 (Успех, нет контента)
+            return
+        
+        except HTTPException:
+            raise # Пробрасываем наши ошибки (404, 403) дальше
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Ошибка при удалении: {str(e)}")

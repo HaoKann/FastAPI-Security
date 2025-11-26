@@ -73,6 +73,7 @@ def db_pool(monkeypatch):
             async def fetchrow(self, query, *args):
                 global fake_product_id_counter
 
+                # 1. Создание продукта
                 if "INSERT INTO products" in query:
                     new_product = {
                         "id": fake_product_id_counter, "name": args[0],
@@ -82,20 +83,33 @@ def db_pool(monkeypatch):
                     fake_product_id_counter += 1
                     print(f"TESTING mode: Продукт '{new_product['name']}' добавлен в mock DB.")
                     return new_product
-                # Логика для поиска пользователя
+                
+                # 2. Поиск пользователя (для логина)
                 if "SELECT" in query and "users" in query:
                     if args and args[0] in existing_users:
                         return {'username': args[0], 'hashed_password': 'hashed_password'}
-                return None
-            
-            # имитирует conn.fetch(...)
+                    return None
+
+            # 3. Поиск продукта перед удалением (SELECT owner_username...)
+                if "SELECT owner_username FROM products" in query:
+                    product_id = int(args[0])
+                    # Ищем продукт в списке
+                    for p in fake_products_db:
+                        if p['id'] == product_id:
+                            return {"owner_username": p["owner_username"]}
+                        return None
+                    
+                    return None
+
+            # имитирует conn.fetch(...) для списков (SELECT * FROM ...)
             async def fetch(self, query, *args):
                 if "SELECT" in query and "products" in query:
                    return [p for p in fake_products_db if p["owner_username"] == args[0]]
                 return []
-            
-            # имитирует conn.execute(...)
+             
+            # имитирует conn.execute(...) для INSERT (без возврата) и DELETE ---
             async def execute(self, query, *args):
+                # 1. Регистрация пользователя
                 # Эмулируем INSERT INTO users (username, hashed_password) VALUES ($1, $2)
                 if isinstance(query, str) and "INSERT INTO users" in query:
                     # Получаем доступ к "фейковой" БД
@@ -104,6 +118,19 @@ def db_pool(monkeypatch):
                     existing_users.add(args[0])
                     print(f"!!! УСПЕХ: User '{args[0]}' добавлен в mock DB.")
                     return "OK"
+                
+                # 2. Удаление продукта
+                if "DELETE FROM products" in query:
+                    product_id = int(args[0])
+                    global fake_products_db
+                    # Оставляем в списке только те продукты, у которых ID НЕ совпадает
+                    initial_len = len(fake_products_db)
+                    fake_products_db = [p for p in fake_products_db if p["id"] != product_id]
+
+                    if len(fake_products_db) < initial_len:
+                        print(f"!!! УСПЕХ: Продукт ID {product_id} удален из mock DB")
+                    return "OK"
+                
                 return "OK"
             
             # async def __aenter__ и async def __aexit__ — позволяют использовать объект в async with (контекстный менеджер)

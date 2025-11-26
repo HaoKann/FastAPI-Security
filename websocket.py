@@ -68,24 +68,18 @@ async def websocket_notification(
             
             # Шаг 2: Проверяем пользователя
             username = payload.get('sub')
-            print(f"DEBUG WS: Token decoded for user: {username}")
-
             # Мы закрываем соединение, если имя пользователя не найдено ИЛИ
             # если функция get_user_from_db вернула None (т.е. not await...).
             if not username or not await get_user_from_db(pool, username):
-                print("DEBUG WS: User not found in DB")
                 await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason='User not found')
                 return
             
         except JWTError as e:
-            print(f"DEBUG WS: JWT Error: {e}")
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason='Invalid or expired token')
             return
         
         # Шаг 3: Если все проверки пройдены, подключаем клиента
         await manager.connect(websocket)
-        print(f"DEBUG WS: Client {username} connected to manager")
-
         await manager.broadcast(f'Клиент {username} подключился к уведомлениям')
         try:
             # Бесконечный цикл для поддержания соединения
@@ -98,7 +92,6 @@ async def websocket_notification(
             await manager.broadcast(f'Клиент {username} отключился')
 
     except Exception as e:
-        print(f"!!! CRITICAL WS ERROR: {e}")
         import traceback
         traceback.print_exc() # Печатаем полный след ошибки
         # Пытаемся закрыть, если еще не закрыто
