@@ -97,3 +97,60 @@ def test_create_product_unauthenticated(client: TestClient):
     # Ожидаем 401 Unauthorized (Нет доступа)
     assert response.status_code == status.HTTP_403_FORBIDDEN
  
+
+# --- Тест 5: Успешное удаление продукта ---
+def test_delete_product_success(client: TestClient, auth_headers: dict):
+    """Тест: Создаем продукт, удаляем его, проверяем что его нет."""
+
+    # 1. Создаем продукт (чтобы было что удалять)
+    create_resp = client.post("/products", json={"name": "Temp", "price": 10}, headers=auth_headers)
+    product_id = create_resp.json()["id"]
+
+    # 2. Удаляем его
+    delete_resp = client.delete(f"/products/{product_id}", headers=auth_headers)
+
+    # 3. Ожидаем 204 No Content (успешное удаление)
+    assert delete_resp.status_code == status.HTTP_204_NO_CONTENT
+
+    # 4. Проверяем, что список продуктов теперь пуст (или этого продукта там нет)
+    get_resp = client.get("/products", headers=auth_headers)
+    products = get_resp.json()
+    # Проверяем, что продукта с таким ID нет в списке
+    assert not any(p['id'] == product_id for p in products)
+
+
+# --- Тест 6: Удаление несуществующего продукта ---
+def test_delete_product_not_found(client: TestClient, auth_headers: dict):
+    """Тест: Попытка удалить продукт с ID 99999."""
+    delete_resp = client.delete("/products/99999", headers=auth_headers)
+    assert delete_resp.status_code == status.HTTP_404_NOT_FOUND
+
+
+# --- Тест 7: Попытка удалить чужой продукт ---
+def test_delete_others_product_forbidden(client: TestClient, auth_headers: dict):
+    """
+    Тест безопасности:
+    1. User1 создает продукт.
+    2. User2 (Вор) пытается его удалить.
+    3. Сервер должен запретить (403).
+    """
+
+    # 1. User1 (auth_headers) создает продукт
+    create_resp = client.post('/products', json={"name": "My precious", "price": 100}, headers=auth_headers)
+    product_id = create_resp.json()["id"]
+
+    # 2. Регистрируем ВТОРОГО пользователя ('thief')
+    thief_data = {"username": "thief", "password": "strongpassword123"}
+    client.post('/auth/register', json=thief_data)
+
+    # 3. Логинимся за вора
+    login_resp = client.post('/auth/login', data=thief_data)
+    thief_token = login_resp.json()['access_token']
+    thief_headers = {"Authorization": f"Bearer {thief_token}"}
+
+    # 4. Вор пытается удалить продукт первого пользователя
+    delete_resp = client.delete(f"/products/{product_id}", headers=thief_headers)
+
+    # 5. Ожидаем отказ (403 Forbidden)
+    assert delete_resp.status_code == status.HTTP_403_FORBIDDEN
+
