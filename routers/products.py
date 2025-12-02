@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status
 from pydantic import BaseModel
@@ -25,6 +25,10 @@ class Product(BaseModel):
 class ProductCreate(BaseModel):
     name: str
     price: float
+
+class ProductUpdate(BaseModel):
+    name: Optional[str] = None
+    price: Optional[float] = None
 
 
 # --- Эндпоинты ---
@@ -69,7 +73,6 @@ async def create_product(product_data: ProductCreate, background_tasks: Backgrou
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Ошибка создания продукта: {str(e)}")
             
-
 # Эндпоинт для удаления продукта
 @router.delete('/{product_id}', status_code=status.HTTP_204_NO_CONTENT)
 async def delete_product(
@@ -109,3 +112,51 @@ async def delete_product(
             raise # Пробрасываем наши ошибки (404, 403) дальше
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Ошибка при удалении: {str(e)}")
+        
+
+# Эндпоинт для обновления продукта
+@router.put('/{product_id}', response_model=Product)
+async def update_product(
+    product_id: int,
+    products_update: ProductUpdate,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_pool)
+):
+    """Обновляет продукт. Можно изменить имя, цену или и то, и другое."""
+    username = current_user['username']
+
+    async with pool.acquire() as conn:
+        try:
+            # 1. Проверяем существование и права (как в delete)
+            product_row = await conn.fetchrow(
+                "SELECT owner_username FROM products WHERE id = $1",
+                product_id
+            )
+
+            if not product_row:
+                raise HTTPException(status_code=404, detail="Продукт не найден")
+            
+            if product_row['owner_username'] != username:
+                raise HTTPException(status_code=403, detail="Нельзя редактировать чужой продукт")
+
+            # 2. Выполняем обновление
+            # Используем SQL функцию COALESCE: если передали null ($1), оставляем старое значение (name)
+            updated_row = await conn.fetchrow(
+                products_update.name,
+                products_update.price,
+                product_id
+            )
+
+            # 3. Преобразуем в Pydantic-модель
+            updated_product = Product(**dict*updated_row)
+
+            # 4. Уведомление
+            background_tasks.add_task(manager.broadcast, f"Продукт обновлен: {updated_product.model_dump_json()}")
+
+            return updated_product
+        
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Ошибка обновления: {str(e)}")
