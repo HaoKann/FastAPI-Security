@@ -71,6 +71,8 @@ def db_pool(monkeypatch):
         class MockConnection:
             # имитирует conn.fetchrow(...)
             async def fetchrow(self, query, *args):
+                print(f"DEBUG fetchrow: {query[:50]}... args={args}")
+                
                 global fake_product_id_counter
 
                 # 1. Создание продукта
@@ -99,7 +101,50 @@ def db_pool(monkeypatch):
                             return {"owner_username": p["owner_username"]}
                         return None
                     
+                # 4. Обновление продукта (UPDATE ... RETURNING *)
+                if "UPDATE products" in query:
+                    product_id = int(args[2])
+                    new_name = args[0]
+                    new_price = args[1]
+
+                    for i, p in enumerate(fake_products_db):
+                        if p['id'] == product_id:
+                            # Эмуляция COALESCE: если пришло None, оставляем старое
+                            updated_name = new_name if new_name is not None else p['name']
+                            updated_price = new_price if new_price is not None else p['price']
+
+                            # Обновляем словарь в списке
+                            fake_products_db[i]['name'] = updated_name
+                            fake_products_db[i]['price'] = updated_price
+
+                            print(f"TESTING mode: Продукт ID {product_id} обновлен.")
+                            return fake_products_db[i] # Возвращаем обновленный словарь
                     return None
+                
+                
+            
+                # 4. Обновление продукта (UPDATE ... RETURNING *)
+                if "UPDATE products" in query:
+                    product_id = int(args[2])
+                    new_name = args[0]
+                    new_price = args[1]
+
+                    for i, p in enumerate(fake_products_db):
+                        if p['id'] == product_id:
+                            # Эмуляция COALESCE: если пришло None, оставляем старое
+                            updated_name = new_name if new_name is not None else p['name']
+                            updated_price = new_price if new_price is not None else p['price']
+
+                            # Обновляем словарь в списке
+                            fake_products_db[i]['name'] = updated_name
+                            fake_products_db[i]['price'] = updated_price
+
+                            print(f"TESTING mode: Продукт ID {product_id} обновлен.")
+                            return fake_products_db[i] # Возвращаем обновленный словарь
+                    return None
+                
+                return None
+
 
             # имитирует conn.fetch(...) для списков (SELECT * FROM ...)
             async def fetch(self, query, *args):

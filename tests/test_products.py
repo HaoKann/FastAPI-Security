@@ -154,3 +154,46 @@ def test_delete_others_product_forbidden(client: TestClient, auth_headers: dict)
     # 5. Ожидаем отказ (403 Forbidden)
     assert delete_resp.status_code == status.HTTP_403_FORBIDDEN
 
+
+# --- Тест 8: Успешное обновление продукта ---
+def test_update_product_success(client: TestClient, auth_headers: dict):
+    """Тест: Создаем продукт, обновляем его цену, проверяем."""
+
+    # 1. Создаем продукт "Старый телефон" за 100
+    create_resp = client.post("/products", json={"name": "Old phone", "price": 100.00}, headers=auth_headers)
+    product_id = create_resp.json()['id']
+
+    # 2. Обновляем цену (меняем на 500) и имя
+    update_data = {"name": "New Phone", "price": 500.0}
+    update_resp = client.put(f"/products/{product_id}", json=update_data, headers=auth_headers)
+
+    assert update_resp.status_code == status.HTTP_200_OK
+    assert update_resp.json()["name"] == "New Phone"
+    assert update_resp.json()["price"] == 500.00
+
+    # 3. Проверяем через GET, что в базе данные реально изменились
+    get_resp = client.get('/products', headers=auth_headers)
+    product_in_list = get_resp.json()[0] # Берем первый (и единственный) продукт
+    assert product_in_list["name"] == "New Phone"
+    assert product_in_list["price"] == 500.00
+
+
+# --- Тест 9: Попытка обновить чужой продукт ---
+def test_update_others_product_forbidden(client: TestClient, auth_headers: dict):
+    """Тест: Вор пытается изменить цену нашего продукта."""
+
+    # 1. Честный юзер создает продукт
+    create_resp = client.post('/products', json={"name": "Gold Bar", "price": 1000.0}, headers=auth_headers)
+    product_id = create_resp.json()["id"]
+
+    # 2. Регистрируем и логиним вора
+    thief_data = {"username": "thief_updater", "password": "strongpassword123"} # Пароль правильный для мока
+    client.post('/auth/register', json=thief_data)
+    login_resp = client.post('/auth/login', data=thief_data)
+    thief_headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
+
+    # 3. Вор пытается изменить цену на 1.0
+    update_resp = client.put(f"/products/{product_id}", json={"price": 1.0}, headers=thief_headers)
+
+    assert update_resp.status_code == status.HTTP_403_FORBIDDEN
+
