@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 import os
 from starlette import status
 from websocket import manager
+from httpx import AsyncClient, ASGITransport
+
 
 # --- 1. Настройка тестового окружения ---
 
@@ -101,28 +103,6 @@ def db_pool(monkeypatch):
                             return {"owner_username": p["owner_username"]}
                         return None
                     
-                # 4. Обновление продукта (UPDATE ... RETURNING *)
-                if "UPDATE products" in query:
-                    product_id = int(args[2])
-                    new_name = args[0]
-                    new_price = args[1]
-
-                    for i, p in enumerate(fake_products_db):
-                        if p['id'] == product_id:
-                            # Эмуляция COALESCE: если пришло None, оставляем старое
-                            updated_name = new_name if new_name is not None else p['name']
-                            updated_price = new_price if new_price is not None else p['price']
-
-                            # Обновляем словарь в списке
-                            fake_products_db[i]['name'] = updated_name
-                            fake_products_db[i]['price'] = updated_price
-
-                            print(f"TESTING mode: Продукт ID {product_id} обновлен.")
-                            return fake_products_db[i] # Возвращаем обновленный словарь
-                    return None
-                
-                
-            
                 # 4. Обновление продукта (UPDATE ... RETURNING *)
                 if "UPDATE products" in query:
                     product_id = int(args[2])
@@ -278,3 +258,16 @@ def auth_headers(client: TestClient):
 
     # Возвращаем заголовок, который будет использоваться в тесте
     yield headers
+
+
+
+@pytest.fixture(scope="function")
+async def ac():
+    """
+    Асинхронный клиент (AsyncClient) для тестов.
+    Позволяет использовать await client.get(...)
+    """
+    # ASGITransport позволяет тестировать приложение без запуска реального сервера (как TestClient)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac

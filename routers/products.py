@@ -143,13 +143,13 @@ async def update_product(
             # 2. Выполняем обновление
             # Используем SQL функцию COALESCE: если передали null ($1), оставляем старое значение (name)
             updated_row = await conn.fetchrow(
-                """""
+                '''
                 UPDATE products
                 SET name = COALESCE($1, name),
                     price = COALESCE($2, price)
                 WHERE id = $3
                 RETURNING *
-                """"", 
+                ''', 
                 products_update.name,
                 products_update.price,
                 product_id
