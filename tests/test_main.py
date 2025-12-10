@@ -3,8 +3,9 @@ from datetime import datetime, timedelta, UTC
 from fastapi.testclient import TestClient
 from starlette import status
 
-SECRET_KEY = '26e73ab713b6d22c1b45a5f0db904c961f2ccd65d0541fb04a938a5c44e23c7f'
-ALGORITHM= 'HS256'
+# Мы берем настройки прямо из модуля авторизации.
+# Если в CI задан env var, auth.py его подхватит, и тест тоже его увидит.
+from auth import SECRET_KEY, ALGORITHM
 
 # --- Тесты для корневых эндпоинтов ---
 
