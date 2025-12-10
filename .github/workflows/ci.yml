@@ -1,0 +1,45 @@
+name: CI Pipeline # Имя твоего процесса (будет видно на GitHub)
+
+# 1. КОГДА ЗАПУСКАТЬ?
+on:
+  push:
+    branches: [ "main", "master" ] # Запускать при пуше в эти ветки
+  pull_request:
+    branches: [ "main", "master" ] # Запускать при создании Pull Request
+
+# 2. ЧТО ДЕЛАТЬ?
+jobs:
+  test:
+    # Арендуем сервер с последней версией Ubuntu (Linux)
+    runs-on: ubuntu-latest
+
+    # Задаем переменные окружения для этого сервера
+    # Важно: Для тестов используем фейковые данные, реальные секреты тут не нужны
+    env:
+      SECRET_KEY: "test_secret_key_for_ci_pipeline"
+      ALGORITHM: "HS256"
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      # Базу данных указывать не нужно, так как conftest.py её подменяет!
+
+    steps:
+      # Шаг А: Скачиваем твой код на этот сервер
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Шаг Б: Устанавливаем Python 3.13
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # Шаг В: Устанавливаем зависимости из requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest-cov # На всякий случай, если его нет в txt
+
+      # Шаг Г: ЗАПУСКАЕМ ТЕСТЫ!
+      - name: Run tests with pytest
+        run: |
+          pytest -v
