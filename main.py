@@ -34,6 +34,11 @@ async def lifespan(app: FastAPI):
     if os.getenv("TESTING") != "True":
         print("Connecting to database...")
         await connect_to_db(app)
+
+        print("\n" + "="*50)
+        print("🚀  SERVER IS READY!")
+        print("👉  Open Swagger UI: http://localhost:8001/docs")
+        print("="*50 + "\n")
     else:
         print("TESTING mode: skipping DB connect")
 
@@ -43,7 +48,7 @@ async def lifespan(app: FastAPI):
     # --- Завершение: Код после yield ---
     # Выполняется ОДИН РАЗ при остановке сервера
     print("Lifespan shutting down")
-    if os.getenv("TESTING") != True and app.state.pool:
+    if os.getenv("TESTING") != "True" and app.state.pool:
         await close_db_connection(app)
 
 

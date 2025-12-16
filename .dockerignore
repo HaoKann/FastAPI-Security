@@ -1,6 +1,17 @@
+# Игнорируем виртуальное окружение
 .venv
-.git
+venv/
+
+# Игнорируем локальные настройки окружения
+.env
+.env.local
+
+# Игнорируем кэш Python
 __pycache__
 *.pyc
 *.pyo
-.env
+*.pyd
+
+# Игнорируем Git
+.git
+.gitignore

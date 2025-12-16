@@ -1,0 +1,57 @@
+services:
+  # 1. Сервис Базы Данных (PostgreSQL)
+  db:
+    image: postgres:15
+    container_name: fastapi_db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD} #  БЕРЕМ ИЗ ФАЙЛА .env
+      POSTGRES_DB: fastapi_auth # <--- Имя должно совпадать с тем, что в твоем конфиге!
+    ports:
+      - "5433:5432" # Чтобы можно было подключаться к БД через DBeaver с компа
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # Чтобы данные не исчезали при перезагрузке
+
+  # 2. Сервис Redis (для Celery и кэша)
+  redis:
+    image: redis:7
+    container_name: fastapi_redis
+    restart: always
+    ports:
+      - "6379:6379"
+
+  # 3. Приложение FastAPI
+  web:
+    build: . # Строим образ из Dockerfile в текущей папке
+    container_name: fastapi_app
+    restart: always
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8001:8000"
+    depends_on:
+      - db
+      - redis
+    # САМОЕ ВАЖНОЕ: Передаем переменные внутрь контейнера
+    environment:
+      PYTHONUNBUFFERED: 1
+      DB_HOST: db  # Имя контейнера базы
+      DB_PORT: 5432 # Порт ВНУТРИ сети Docker (стандартный)
+      DB_USER: postgres
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: fastapi_auth
+      
+      REDIS_URL: redis://redis:6379 # Вместо localhost пишем "redis"
+
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: ${ALGORITHM}
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+
+  # Объявляем том для хранения данных БД
+  # Это "Именованный том" (Named Volume).
+  # Почему после двоеточия пусто? Потому что мы используем настройки по умолчанию.
+volumes:
+  postgres_data:
+
+
+      

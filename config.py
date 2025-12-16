@@ -18,22 +18,30 @@ else:
 
 # Настройки JWT
 SECRET_KEY = os.getenv('SECRET_KEY')
-ALGORITHM = 'HS256'
+ALGORITHM = os.getenv('ALGORITHM', 'HS256')
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
-# Настройки подключения к БД
+# --- Настройки подключения к БД ---
+# Мы добавляем значения по умолчанию (None), чтобы код не падал сразу, 
+# но если Docker не передаст переменную, мы это увидим при сборке URL.
 DB_HOST = os.getenv('DB_HOST')
 DB_PORT = os.getenv('DB_PORT')
 DB_NAME = os.getenv('DB_NAME')
 DB_USER = os.getenv('DB_USER')
 DB_PASSWORD = os.getenv('DB_PASSWORD')
 
-# Полный "адрес" для asyncpg
+
+# --- Сборка URL для asyncpg ---
+# ВАЖНО: Используем 'postgresql://', это стандарт.
 DATABASE_URL = (
-    f"postgres://{DB_USER}:{DB_PASSWORD}"
+    f"postgresql://{DB_USER}:{DB_PASSWORD}"
     f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 )
 
+# Для отладки (потом можно убрать): выводим, куда пытаемся стучаться
+# ВНИМАНИЕ: Это выведет пароль в логи, используй только при отладке!
+print(f"DEBUG: Configured DATABASE_URL={DATABASE_URL}")
+
 # Настройки Redis
-REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0d')
+REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
