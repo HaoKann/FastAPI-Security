@@ -39,9 +39,5 @@ DATABASE_URL = (
     f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 )
 
-# Для отладки (потом можно убрать): выводим, куда пытаемся стучаться
-# ВНИМАНИЕ: Это выведет пароль в логи, используй только при отладке!
-print(f"DEBUG: Configured DATABASE_URL={DATABASE_URL}")
-
 # Настройки Redis
 REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')

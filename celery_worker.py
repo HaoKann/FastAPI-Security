@@ -1,9 +1,3 @@
-import eventlet
-
-# ВАЖНО: Эта команда должна быть В САМОМ НАЧАЛЕ, до всех остальных импортов.
-# Она "патчит" стандартные библиотеки Python, чтобы они работали с eventlet.
-eventlet.monkey_patch()
-
 from celery import Celery
 import os
 from dotenv import load_dotenv

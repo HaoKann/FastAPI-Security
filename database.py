@@ -2,6 +2,7 @@
 import asyncio
 import asyncpg
 from fastapi import Request
+from config import DATABASE_URL
 
 # Импортируем готовые настройки из нашего центрального конфига
 from config import DATABASE_URL
@@ -16,6 +17,7 @@ async def connect_to_db(app):
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             print(f"DEBUG: Попытка подключения {attempt}/{MAX_RETRIES} к: {DATABASE_URL}")
+            # 1. Создаем пул
             # app.state - специальный объект для хранения общих ресурсов
             # Используем DATABASE_URL, который уже содержит все данные
             app.state.pool = await asyncpg.create_pool(
@@ -23,10 +25,16 @@ async def connect_to_db(app):
                 min_size=1,
                 max_size=20
             )
-            print('Database connection pool created successfully')
-            return # Если успешно - выходим из функции
+            print('✅ Database connection pool created successfully')
+
+            # 2. СОЗДАЕМ ТАБЛИЦЫ (Если их нет)
+            await create_tables(app.state.pool)
+
+            # Если успешно - выходим из функции
+            return 
+        
         except Exception as e:
-            print(f"Connection failed: {e}")
+            print(f"❌ Connection failed: {e}")
             if attempt < MAX_RETRIES:
                 print(f"Waiting {WAIT_SECONDS} seconds before retrying...")
                 # ВАЖНО: await asyncio.sleep - это "умный" сон. 
@@ -36,6 +44,17 @@ async def connect_to_db(app):
                 print("Could not connect to DB after multiple attempts")
                 raise e # Если все попытки исчерпаны - падаем
             
+async def create_tables(pool):
+    """Создает необходимые таблицы в БД при старте."""
+    print("🛠️  Checking/Creating tables...")
+    async with pool.acquire() as conn:
+        await conn.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                    username TEXT PRIMARY KEY, 
+                    hashed_password TEXT NOT NULL
+                );
+            ''')
+        print("✅  Tables are ready")
 
 # Эта функция будет вызываться 1 раз при остановке приложения
 async def close_db_connection(app):
