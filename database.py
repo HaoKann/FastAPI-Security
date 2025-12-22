@@ -54,6 +54,19 @@ async def create_tables(pool):
                     hashed_password TEXT NOT NULL
                 );
             ''')
+        
+        # Таблица продуктов
+        # owner_username ссылается на таблицу users, чтобы у товара был владелец
+        await conn.execute('''
+            CREATE TABLE IF NOT EXISTS products (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                price INTEGER NOT NULL,
+                owner_username TEXT REFERENCES users(username)
+            );
+        ''')
+
         print("✅  Tables are ready")
 
 # Эта функция будет вызываться 1 раз при остановке приложения
