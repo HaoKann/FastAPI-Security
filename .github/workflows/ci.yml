@@ -37,7 +37,7 @@ jobs:
       # Шаг 3: ПРОВЕРКА DOCKER (Сборка)
       # Проверяет Dockerfile и requirements.txt на ошибки установки
       - name: Build with Docker Compose
-        run: docker-compose build
+        run: docker compose build
 
       # Шаг 4: Настройка Python (для запуска тестов вне контейнера)
       - name: Set up Python 3.13
