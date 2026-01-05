@@ -14,6 +14,7 @@ else:
     print("--- PRODUCTION MODE: Загружается конфигурация из .env ---")
     load_dotenv()
 
+
 # --- Собираем все настройки в одном месте ---
 
 # Настройки JWT
@@ -22,22 +23,28 @@ ALGORITHM = os.getenv('ALGORITHM', 'HS256')
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
+
 # --- Настройки подключения к БД ---
-# Мы добавляем значения по умолчанию (None), чтобы код не падал сразу, 
-# но если Docker не передаст переменную, мы это увидим при сборке URL.
-DB_HOST = os.getenv('DB_HOST')
-DB_PORT = os.getenv('DB_PORT')
-DB_NAME = os.getenv('DB_NAME')
-DB_USER = os.getenv('DB_USER')
-DB_PASSWORD = os.getenv('DB_PASSWORD')
 
+# 1. Сначала пытаемся получить готовую ссылку (Render дает именно её)
+DATABASE_URL = os.getenv('DATABASE_URL')
 
-# --- Сборка URL для asyncpg ---
-# ВАЖНО: Используем 'postgresql://', это стандарт.
-DATABASE_URL = (
-    f"postgresql://{DB_USER}:{DB_PASSWORD}"
-    f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-)
+# 2. Если готовой ссылки нет (например, локально), собираем её сами
+if not DATABASE_URL:
+    DB_HOST = os.getenv('DB_HOST')
+    DB_PORT = os.getenv('DB_PORT')
+    DB_NAME = os.getenv('DB_NAME')
+    DB_USER = os.getenv('DB_USER')
+    DB_PASSWORD = os.getenv('DB_PASSWORD')
+
+    # Собираем URL вручную
+    # ВАЖНО: Используем 'postgresql://', это стандарт.
+    DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+else:
+    # Хак для Render: он иногда дает ссылку, начинающуюся на postgres://
+    # А SQLAlchemy/Asyncpg требует postgresql://
+    if DATABASE_URL.startswith('postgres://'):
+        DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
 
 # Настройки Redis
 REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
