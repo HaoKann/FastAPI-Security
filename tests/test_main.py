@@ -21,9 +21,9 @@ def test_read_root(client: TestClient):
 
     # Проверяем, что статус ответа 307 (Temporary Redirect)
     assert response.status_code == 307
-    
+
     # Проверяем, что заголовок location указывает на /docs
-    assert response.headers['location'] == 'docs'
+    assert response.headers['location'] == '/docs'
 
 def test_not_found(client: TestClient):
     print("Starting test_not_found")
