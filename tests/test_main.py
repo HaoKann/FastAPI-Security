@@ -11,17 +11,19 @@ from auth import SECRET_KEY, ALGORITHM
 
 def test_read_root(client: TestClient):
     """
-    Проверяем, что главный эндпоинт ("/") работает и возвращает правильный статус.
-    (client: TestClient): Наш "виртуальный Postman", который мы создали в conftest.py.
-    Pytest автоматически найдет его и передаст сюда.
+    Проверяем, что главный эндпоинт ("/") теперь перенаправляет на /docs.
     """
     print('Starting test_read_root')
-    # Шаг 1: Отправляем GET-запрос на адрес "/"
-    response = client.get('/')
-    print(f"Response status: {response.status_code}, JSON: {response.json()}")
-    # Шаг 2: Проверяем результат (Утверждаем)
-    assert response.status_code == 200
-    assert response.json() == {'status': 'API is running'}
+
+    # Важно: follow_redirects=False, чтобы мы проверили сам факт перенаправления (307),
+    # а не загружали тяжелую HTML страницу Swagger.
+    response = client.get('/', follow_redirects=False)
+
+    # Проверяем, что статус ответа 307 (Temporary Redirect)
+    assert response.status_code == 307
+    
+    # Проверяем, что заголовок location указывает на /docs
+    assert response.headers['location'] == 'docs'
 
 def test_not_found(client: TestClient):
     print("Starting test_not_found")
