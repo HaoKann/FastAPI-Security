@@ -1,9 +1,8 @@
+# --- 1. Импортируем наши модули ---
 import os
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from contextlib import asynccontextmanager
-
-
-# --- 1. Импортируем наши модули ---
 # ВАЖНО: config должен импортироваться до модулей, которые его используют.
 # Он сам загрузит нужный .env или .env.test файл.
 import config
@@ -16,7 +15,6 @@ from routers.products import router as products_router
 
 
 # --- 2. Управление жизненным циклом приложения ---
-
 # Это как "выключатель" для приложения, нужен для правильного включения и выключения подключения к БД
 # # ИСПРАВЛЕНО: Используем новый, рекомендуемый способ управления жизненным циклом - lifespan.
 @asynccontextmanager
@@ -53,7 +51,6 @@ async def lifespan(app: FastAPI):
 
 
 # --- 3. Создаем и настраиваем приложение ---
-
 # Создаем главный экземпляр FastAPI и передаем ему наш lifespan
 app = FastAPI(
     title='My Refactored FastAPI App',
@@ -83,7 +80,6 @@ app.include_router(websocket_router)
 
 # --- 5. Корневой эндпоинт (опционально) ---
 # Это простой эндпоинт, чтобы можно было легко проверить, что сервер запущен.
-@app.get('/', tags=['Root'])
-def read_root():
-    """Простой эндпоинт для проверки статуса API."""
-    return {'status': 'API is running'}
+@app.get('/', include_in_schema=False)
+async def root():
+    return RedirectResponse(url='/docs')
