@@ -59,11 +59,19 @@ async function getMe() {
 }
 
 
-// --- 3. Функция получения товаров ---
+// --- 3. Функция получения товаров с токеном---
 async function getProducts() {
+    const token = localStorage.getItem('accessToken') // <-- 1. Достаем токен
     const responseArea = document.getElementById('response-area')
+
     try {
-        const response = await fetch(`${API_URL}/products/`)
+        const response = await fetch(`${API_URL}/products/`, {  // <-- 2. Добавляем настройки запроса
+            method: 'GET',
+            headers: {
+                // <-- 3. Предъявляем пропуск (токен)
+                'Authorization': `Bearer ${token}`
+            }
+        }) 
         const data = await response.json()
         responseArea.innerText =  JSON.stringify(data, null, 2)
     } catch (error) {
