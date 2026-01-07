@@ -12,7 +12,8 @@ from database import connect_to_db, close_db_connection
 from auth import router as auth_router
 # Добавляем импорт для роутера продуктов
 from routers.products import router as products_router
-
+from fastapi.staticfiles import StaticFiles # <-- Импорт для папки
+from fastapi.responses import FileResponse # <-- Импорт для отдачи файла
 
 # --- 2. Управление жизненным циклом приложения ---
 # Это как "выключатель" для приложения, нужен для правильного включения и выключения подключения к БД
@@ -35,7 +36,7 @@ async def lifespan(app: FastAPI):
 
         print("\n" + "="*50)
         print("🚀  SERVER IS READY!")
-        print("👉  Open Swagger UI: http://localhost:8001/docs")
+        print("👉  Open Swagger UI: http://localhost:8001")
         print("="*50 + "\n")
     else:
         print("TESTING mode: skipping DB connect")
@@ -59,6 +60,9 @@ app = FastAPI(
     lifespan=lifespan 
 )
 
+# Подключаем папку static, чтобы браузер мог брать оттуда script.js и стили
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 
 # --- 4. Подключаем роутеры ---
 # Используем app.include_router(), чтобы подключить все эндпоинты из наших модулей.
@@ -79,7 +83,7 @@ app.include_router(websocket_router)
 
 
 # --- 5. Корневой эндпоинт (опционально) ---
-# Это простой эндпоинт, чтобы можно было легко проверить, что сервер запущен.
-@app.get('/', include_in_schema=False)
+# Изменяем главный маршрут: теперь он отдает HTML-файл, а не редирект
+@app.get('/')
 async def root():
-    return RedirectResponse(url='/docs')
+    return FileResponse('static/index.html')

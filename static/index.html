@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мой FastAPI Фронтенд</title>
+    <style>
+        body { font-family: monospace; padding: 20px; max-width: 600px; margin: 0 auto; }
+        .box { border: 1px solid #333; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
+        input { display: block; margin-bottom: 10px; width: 100%; padding: 5px; }
+        button { padding: 10px; cursor: pointer; background: #333; color: white; border: none; }
+        button:hover { background: #555; }
+        #response-area { background: #f0f0f0; padding: 10px; white-space: pre-wrap; word-wrap: break-word; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <h1> 🔐 FastAPI Auth Client </h1>
+
+    <div id="login-section" class="box">
+        <h3>Вход в систему</h3>
+        <input type="text" id="username" placeholder="Username">
+        <input type="password" id="password" placeholder="Password">
+        <button onclick="login()">Войти (Получить токен)</button>
+    </div>
+
+    <div id="dashboard-section" class="box hidden">
+        <h3>👋 Привет! Твой токен сохранен.</h3>
+        <p>Токен: <span id="token-display" style="color: green; font-size: 10px;"></span></p>
+        
+        <hr>
+        
+        <h4>Тест защищенных ручек:</h4>
+        <button onclick="getMe()">Кто я? (/auth/me)</button>
+        <button onclick="getProducts()">Список товаров (/products)</button>
+        <br><br>
+        <button onclick="logout()" style="background: red;">Выйти</button>
+    </div>
+    
+
+    <div class="box">
+        <h3>Ответ сервера:</h3>
+        <pre id="response-area">Здесь будет JSON...</pre>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
