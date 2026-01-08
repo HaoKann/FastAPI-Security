@@ -3,17 +3,28 @@ import os
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from contextlib import asynccontextmanager
+
 # ВАЖНО: config должен импортироваться до модулей, которые его используют.
 # Он сам загрузит нужный .env или .env.test файл.
 import config
+
 # Импортируем функции для управления жизненным циклом БД
 from database import connect_to_db, close_db_connection
+
 # Импортируем готовые "удлинители" (роутеры) из каждого модуля
 from auth import router as auth_router
+
 # Добавляем импорт для роутера продуктов
 from routers.products import router as products_router
+
+# Frontend
 from fastapi.staticfiles import StaticFiles # <-- Импорт для папки
 from fastapi.responses import FileResponse # <-- Импорт для отдачи файла
+
+# GraphQL
+from strawberry.fastapi import GraphQLRouter
+from graphql_app.schema import schema # Импортируем нашу схему
+
 
 # --- 2. Управление жизненным циклом приложения ---
 # Это как "выключатель" для приложения, нужен для правильного включения и выключения подключения к БД
@@ -62,6 +73,16 @@ app = FastAPI(
 
 # Подключаем папку static, чтобы браузер мог брать оттуда script.js и стили
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+# --- ПОДКЛЮЧАЕМ GRAPHQL ---
+# Создаем роутер Strawberry
+graphql_app = GraphQLRouter(schema)
+
+# Подключаем его к FastAPI по адресу /graphql
+app.include_router(graphql_app, prefix='/graphql')
+
+
 
 
 # --- 4. Подключаем роутеры ---
