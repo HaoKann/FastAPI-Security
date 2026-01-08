@@ -11,19 +11,16 @@ from auth import SECRET_KEY, ALGORITHM
 
 def test_read_root(client: TestClient):
     """
-    Проверяем, что главный эндпоинт ("/") теперь перенаправляет на /docs.
+    Проверяем, что главный эндпоинт ("/") возвращает HTML страницу (index.html),
+    а не редирект.
     """
-    print('Starting test_read_root')
+    response = client.get('/')
 
-    # Важно: follow_redirects=False, чтобы мы проверили сам факт перенаправления (307),
-    # а не загружали тяжелую HTML страницу Swagger.
-    response = client.get('/', follow_redirects=False)
+    # Проверяем, что статус 200 (OK)
+    assert response.status_code == 200
 
-    # Проверяем, что статус ответа 307 (Temporary Redirect)
-    assert response.status_code == 307
-
-    # Проверяем, что заголовок location указывает на /docs
-    assert response.headers['location'] == '/docs'
+    # (Опционально) Проверяем, что нам вернулся именно HTML
+    assert "text/html" in response.headers["content-type"]
 
 def test_not_found(client: TestClient):
     print("Starting test_not_found")
