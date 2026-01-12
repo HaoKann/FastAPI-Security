@@ -76,10 +76,11 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 # --- ПОДКЛЮЧАЕМ GRAPHQL ---
-# Создаем роутер Strawberry
+# Создаем роутер, передавая ему схему
 graphql_app = GraphQLRouter(schema)
 
-# Подключаем его к FastAPI по адресу /graphql
+# Подключаем его к приложению
+# prefix="/graphql" означает, что он будет доступен по адресу http://сайт/graphql
 app.include_router(graphql_app, prefix='/graphql')
 
 
