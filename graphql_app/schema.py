@@ -33,8 +33,10 @@ def get_current_user(request):
         
         return username
     
-    except (ValueError, jwt.PyJWTrror):
-        raise Exception("Could not validate credentials")
+    # ИЗМЕНЕНИЕ: Ловим просто Exception. 
+    # Это проще и надежнее, чем гадать с названиями ошибок библиотеки jwt
+    except Exception:
+        raise Exception("Could not validate credentials (Invalid Token)")
 
 
 # --- Создаем "Слепок" товара (ProductType) ---
