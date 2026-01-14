@@ -1,9 +1,43 @@
 import strawberry
+import jwt
+import os
 from strawberry.types import Info
 from typing import Optional, List
 
 
-# --- 1. Создаем "Слепок" товара (ProductType) ---
+# Настройки для JWT (те же, что и в auth.py)
+SECRET_KEY = os.getenv("SECRET_KEY", "a_very_secret_key_for_local_development")
+ALGORITHM = 'HS256'
+
+
+# --- 1. Вспомогательная функция проверки токена ---
+def get_current_user(request):
+    # 1. Достаем заголовок Authorization
+    auth_header = request.headers.get("Authorization")
+
+    if not auth_header:
+        raise Exception("Not authenticated: Заголовок Authorization отсутствует")
+    
+    # 2. Ожидаем формат "Bearer <token>"
+    try:
+        scheme, token = auth_header.split()
+        if scheme.lower() != 'bearer':
+            raise Exception("Invalid authentication scheme")
+    
+        # 3. Расшифровываем токен
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+
+        if username is None:
+            raise Exception("Invalid token: username not found")
+        
+        return username
+    
+    except (ValueError, jwt.PyJWTrror):
+        raise Exception("Could not validate credentials")
+
+
+# --- Создаем "Слепок" товара (ProductType) ---
 # Это то, как товар будет выглядеть для GraphQL.
 # Поля должны совпадать с тем, что вернет база данных.
 @strawberry.type
@@ -71,15 +105,21 @@ async def get_product(info: Info, product_id: int) -> Optional[ProductType]:
             return None # Если не нашли, возвращаем null
 
 
-# ЗАПИСЬ
+# ЗАПИСЬ (ТЕПЕРЬ ЗАЩИЩЕНА 🔒)   
 async def create_product(info: Info, name: str, price: int, description: Optional[str] = None) -> ProductType:
-   request = info.context['request']
-   pool = request.app.state.pool
+    request = info.context['request']
 
-   if not pool:
+    # --- ПРОВЕРКА БЕЗОПАСНОСТИ ---
+    # Если токена нет или он кривой — тут вылетит ошибка, и код ниже не сработает
+    user = get_current_user(request)
+    print(f"Запрос выполнил пользователь: {user}")
+   
+    pool = request.app.state.pool
+
+    if not pool:
        raise Exception('Нет подключения к БД!')
 
-   async with pool.acquire() as connection:
+    async with pool.acquire() as connection:
         # Мы делаем INSERT и сразу просим вернуть ID созданной строки (RETURNING id)
         # Это фишка PostgreSQL, чтобы не делать два запроса.
         query = """
