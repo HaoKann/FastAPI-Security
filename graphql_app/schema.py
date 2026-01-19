@@ -1,42 +1,7 @@
 import strawberry
-import jwt
-import os
 from strawberry.types import Info
 from typing import Optional, List
-
-
-# Настройки для JWT (те же, что и в auth.py)
-SECRET_KEY = os.getenv("SECRET_KEY", "a_very_secret_key_for_local_development")
-ALGORITHM = 'HS256'
-
-
-# --- 1. Вспомогательная функция проверки токена ---
-def get_current_user(request):
-    # 1. Достаем заголовок Authorization
-    auth_header = request.headers.get("Authorization")
-
-    if not auth_header:
-        raise Exception("Not authenticated: Заголовок Authorization отсутствует")
-    
-    # 2. Ожидаем формат "Bearer <token>"
-    try:
-        scheme, token = auth_header.split()
-        if scheme.lower() != 'bearer':
-            raise Exception("Invalid authentication scheme")
-    
-        # 3. Расшифровываем токен
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-
-        if username is None:
-            raise Exception("Invalid token: username not found")
-        
-        return username
-    
-    # ИЗМЕНЕНИЕ: Ловим просто Exception. 
-    # Это проще и надежнее, чем гадать с названиями ошибок библиотеки jwt
-    except Exception:
-        raise Exception("Could not validate credentials (Invalid Token)")
+from graphql_app.auth import authenticate_user
 
 
 # --- Создаем "Слепок" товара (ProductType) ---
@@ -113,7 +78,7 @@ async def create_product(info: Info, name: str, price: int, description: Optiona
 
     # --- ПРОВЕРКА БЕЗОПАСНОСТИ ---
     # Если токена нет или он кривой — тут вылетит ошибка, и код ниже не сработает
-    user = get_current_user(request)
+    user = authenticate_user(request)
     print(f"Запрос выполнил пользователь: {user}")
    
     pool = request.app.state.pool

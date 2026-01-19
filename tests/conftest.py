@@ -1,7 +1,8 @@
 # conftest.py — это глобальный файл конфигурации pytest.
 # Любые фикстуры, объявленные здесь, доступны во всех тестах, без импортов.
 
-
+from main import app
+from database import get_pool as original_get_pool
 import pytest
 from fastapi.testclient import TestClient
 import os
@@ -17,6 +18,7 @@ from httpx import AsyncClient, ASGITransport
 # подменять, например, настоящую БД на тестовую.
 os.environ['TESTING'] = 'True'
 print('Starting app import...')
+
 # ВАЖНО: Импортируем `app` из main.py ПОСЛЕ установки переменной окружения.
 try:
     from main import app
@@ -44,11 +46,17 @@ fake_product_id_counter = 1
 # (Можно также scope='session', чтобы создавать один раз на все тесты.)
 @pytest.fixture(scope='function')
 def db_pool(monkeypatch):
+    """
+    Создает фейковую базу и подменяет зависимости.
+    Возвращает экземпляр MockPool.
+    """
     global existing_users, fake_products_db, fake_product_id_counter
     existing_users.clear()  # очищаем перед каждым тестом
     fake_products_db.clear()
     fake_product_id_counter = 1
     manager.active_connections = []
+
+    # --- ОПРЕДЕЛЕНИЕ ФЕЙКОВЫХ ФУНКЦИЙ ---
 
     # mock_get_user_from_db, которая имитирует поведение реальной функции:
     async def mock_get_user_from_db(pool, username):
@@ -181,24 +189,32 @@ def db_pool(monkeypatch):
 
     # ПРИМЕНЯЕМ ПОДМЕНЫ 
     # А. Подменяем функции внутри auth.py
+
+    # 1. Создаем экземпляр нашего фейкового пула
+    mock_pool_instance = mock_get_pool()
+
+    # 2. Кладем его в app.state (ЭТО ВАЖНО ДЛЯ GRAPHQL!)
+    app.state.pool = mock_pool_instance
+
+    # 3. Подменяем зависимость для REST API
+    app.dependency_overrides[original_get_pool] = lambda: mock_pool_instance
+
+
+    # Б. Подменяем ЗАВИСИМОСТЬ (Depends) во всем приложении
+    # Это заменяет get_pool на mock_get_pool везде, где есть Depends(get_pool)
     monkeypatch.setattr('auth.get_user_from_db', mock_get_user_from_db)
     try:
         # "Подменяем" настоящую функцию проверки пароля на нашу "обманку"
+        monkeypatch.setattr('auth.get_user_from_db', mock_get_user_from_db)
         monkeypatch.setattr('auth.verify_password', mock_verify_password)
     except AttributeError:
-        monkeypatch.setattr('auth.verify_password', mock_verify_password)
+        pass
     
-    # Б. Подменяем ЗАВИСИМОСТЬ (Depends) во всем приложении
-    # Это заменяет get_pool на mock_get_pool везде, где есть Depends(get_pool)
-    from database import get_pool as original_get_pool
-    from main import app
-
-    app.dependency_overrides[original_get_pool] = mock_get_pool
-
-    # Фикстура завершает работу
-    yield # Используем yield, чтобы фикстура "жила", пока идет тест
+    # !!! ВАЖНО: Возвращаем сам пул, чтобы client мог его восстановить
+    yield mock_pool_instance
 
     app.dependency_overrides = {}
+    app.state.pool = None  # Очищаем после теста
 
 
 
@@ -215,9 +231,11 @@ def client(db_pool):
     print('Creating TestClient')
     # Контекстный менеджер `with` гарантирует, что все "включения" и "выключения"
     # нашего приложения (lifespan) будут корректно вызваны. 
+    # TestClient запускает lifespan, который делает app.state.pool = None.
     with TestClient(app, raise_server_exceptions=False) as test_client:
         # `yield` передает управление тесту, который запросил этого "помощника".
         print('TestClient created')
+        app.state.pool = db_pool
         yield test_client
         print('TestClient closed')
 
@@ -262,12 +280,16 @@ def auth_headers(client: TestClient):
 
 
 @pytest.fixture(scope="function")
-async def ac():
+async def ac(db_pool):
     """
     Асинхронный клиент (AsyncClient) для тестов.
     Позволяет использовать await client.get(...)
     """
     # ASGITransport позволяет тестировать приложение без запуска реального сервера (как TestClient)
+
+    # На всякий случай тоже восстанавливаем пул
+    app.state.pool = db_pool
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
