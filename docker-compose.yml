@@ -15,11 +15,16 @@ services:
 
   # 2. Сервис Redis (для Celery и кэша)
   redis:
-    image: redis:7
+    image: redis:7-alpine
     container_name: fastapi_redis
     restart: always
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 30s
+      retries: 50
 
   # 3. Приложение FastAPI
   web:

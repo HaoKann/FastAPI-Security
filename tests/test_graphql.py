@@ -1,6 +1,4 @@
 import pytest
-from httpx import AsyncClient, ASGITransport
-from main import app
 
 # 1. Тест публичного запроса (Query)
 # Используем фикстуру ac (AsyncClient) из твоего conftest.py

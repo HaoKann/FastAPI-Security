@@ -1,7 +1,8 @@
 from typing import List, Optional
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status, Request
 from pydantic import BaseModel
+import json
 
 # Импортируем зависимости из наших центральных модулей
 from auth import get_current_user
@@ -34,21 +35,55 @@ class ProductUpdate(BaseModel):
 # --- Эндпоинты ---
 # Защищённый эндпоинт, который возвращает список продуктов, принадлежащих текущему пользователю.
 @router.get('/', response_model=List[Product])
-async def get_products(current_user: dict = Depends(get_current_user), pool: asyncpg.Pool = Depends(get_pool)):
-    """Возвращает список продуктов текущего пользователя."""
+async def get_products(
+    request: Request, # <--- 1. Добавляем Request, чтобы добраться до Redis
+    current_user: dict = Depends(get_current_user), 
+    pool: asyncpg.Pool = Depends(get_pool)
+):
+    """Возвращает список продуктов текущего пользователя с кэшированием."""
     username = current_user['username']
+
+    # Достаем Redis из состояния приложения
+    redis = request.app.state.redis
+
+    # 2. УНИКАЛЬНЫЙ КЛЮЧ ДЛЯ ЮЗЕРА
+    # Если использовать просто "products", данные перемешаются между юзерами!
+    CACHE_KEY = f"products:{username}"
+
+    # --- ЭТАП 1: Проверка Кэша ---
+    if redis:
+        cached_data = await redis.get(CACHE_KEY)
+        if cached_data:
+            print(f"✅ CACHE HIT: Товары для пользователя {username} из Redis")
+            # Возвращаем список словарей. Pydantic сам превратит их в список Product
+            return json.loads(cached_data)
+
+    # --- ЭТАП 2: Запрос в БД ---
+    print(f"❌ CACHE MISS: Идем в базу за товарами для {username}")
     async with pool.acquire() as conn:
             try:
                 products_records = await conn.fetch(
                     "SELECT id, name, price, owner_username FROM products WHERE owner_username = $1",
                     username
                 )
-                if not products_records:
-                    return [] # Возвращаем пустой список, если продуктов нет
-                # ИСПРАВЛЕНО: Преобразуем записи из БД в Pydantic модели более элегантным способом
-                return [Product(**dict(p)) for p in products_records]
+
+                # 1. Сначала превращаем записи БД в обычные словари
+                products_data = [dict(p) for p in products_records]
+
+                # --- ЭТАП 3: Сохранение в Кэш (ЭТОГО НЕ БЫЛО) ---
+                if redis:
+                    # Превращаем список словарей в строку и сохраняем на 60 сек
+                    await redis.set(CACHE_KEY, json.dumps(products_data), ex=60)
+
+                # Возвращаем словари (Pydantic сам проверит их по схеме response_model)
+                return products_data
+            
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f'Ошибка при получении продуктов {str(e)}')
+                # Логируем ошибку, чтобы видеть её в консоли
+                print(f"DB Error: {e}")
+                raise HTTPException(status_code=500, detail=f"Ошибка при получении продуктов: {str(e)}")
+
+                
            
 
 # Защищённый эндпоинт для создания нового продукта, доступный только авторизованным пользователям.

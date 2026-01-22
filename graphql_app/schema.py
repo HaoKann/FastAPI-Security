@@ -116,7 +116,6 @@ class Query:
     # Новое поле products.
     # Мы говорим: "Это поле вернет СПИСОК (List) объектов ProductType".
     # resolver=get_products связывает это поле с функцией выше.
-    # Список всех товаров
     products: List[ProductType] = strawberry.field(resolver=get_products)
 
     # Один конкретный товар

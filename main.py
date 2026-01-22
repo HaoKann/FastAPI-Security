@@ -1,6 +1,9 @@
 # --- 1. Импортируем наши модули ---
 import os
-from fastapi import FastAPI
+import time
+import json
+from redis import asyncio as aioredis
+from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 from contextlib import asynccontextmanager
 
@@ -35,22 +38,38 @@ async def lifespan(app: FastAPI):
     Контекстный менеджер для управления событиями "startup" и "shutdown".
     Это современный и надежный способ управлять ресурсами, такими как пул соединений с БД.
     """
-    print("Lifespan starting")
-    
+
+    # Инициализируем переменные, чтобы они существовали в любом случае
+    app.state.pool = None
+    app.state.redis = None
+
     # # --- Начало: Код до yield ---
     # # Выполняется ОДИН РАЗ при старте сервера
-    app.state.pool = None
     # Подключаемся, если TESTING не равен 'True'
     if os.getenv("TESTING") != "True":
-        print("Connecting to database...")
+        print("Connecting to services...")
+
+        # 1. Подключение к Postgres
         await connect_to_db(app)
+
+        # 2. Подключение к Redis
+        try:
+            print("Connect to Redis...")
+            # 'fastapi_redis' — это имя сервиса из docker-compose.yml
+            # decode_responses=True — чтобы получать строки, а не байты
+            redis = aioredis.from_url('redis://fastapi_redis:6379', encoding='utf8', decode_responses=True)
+            app.state.redis = redis
+            print("✅ Redis connected successfully")
+        except Exception as e:
+            print(f"❌ Failed to connect to Redis: {e}")
+
 
         print("\n" + "="*50)
         print("🚀  SERVER IS READY!")
         print("👉  Open Swagger UI: http://localhost:8001")
         print("="*50 + "\n")
     else:
-        print("TESTING mode: skipping DB connect")
+        print("TESTING mode: skipping DB connect and Redis connect")
 
     # --- Основная работа ---
     yield # Приложение "живет" и обрабатывает запросы
@@ -58,8 +77,15 @@ async def lifespan(app: FastAPI):
     # --- Завершение: Код после yield ---
     # Выполняется ОДИН РАЗ при остановке сервера
     print("Lifespan shutting down")
-    if os.getenv("TESTING") != "True" and app.state.pool:
+
+    # 1. Закрываем Postgres
+    if app.state.pool:
         await close_db_connection(app)
+
+    # 2. Закрываем Redis
+    if app.state.redis:
+        print('Closing Redis connection...')
+        await app.state.redis.close()
 
 
 # --- 3. Создаем и настраиваем приложение ---
@@ -70,6 +96,23 @@ app = FastAPI(
     version='2.0.0',
     lifespan=lifespan 
 )
+
+@app.middleware('http')
+async def add_process_time_header(request: Request, call_next):
+    # 1. Засекаем время ДО начала обработки
+    start_time = time.time()
+
+    # 2. Передаем запрос дальше (в другие middleware и в твою ручку)
+    response = await call_next(request)
+
+    # 3. Замеряем время ПОСЛЕ
+    process_time = time.time() - start_time
+
+    # 4. Добавляем заголовок в ответ (время в секундах)
+    response.headers['X-Process-Time'] = str(process_time)
+
+    return response
+
 
 # Подключаем папку static, чтобы браузер мог брать оттуда script.js и стили
 app.mount("/static", StaticFiles(directory="static"), name="static")
