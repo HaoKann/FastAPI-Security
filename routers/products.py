@@ -37,6 +37,9 @@ class ProductUpdate(BaseModel):
 @router.get('/', response_model=List[Product])
 async def get_products(
     request: Request, # <--- 1. Добавляем Request, чтобы добраться до Redis
+    # Добавляем параметры limit (сколько взять) и offset (сколько пропустить)
+    limit: int = 10,
+    offset: int = 0,
     current_user: dict = Depends(get_current_user), 
     pool: asyncpg.Pool = Depends(get_pool)
 ):
@@ -48,7 +51,9 @@ async def get_products(
 
     # 2. УНИКАЛЬНЫЙ КЛЮЧ ДЛЯ ЮЗЕРА
     # Если использовать просто "products", данные перемешаются между юзерами!
-    CACHE_KEY = f"products:{username}"
+    # ВАЖНО: Ключ кэша теперь должен зависеть от страницы!
+    # Иначе на странице 2 мы увидим кэш от страницы 1.
+    CACHE_KEY = f"products:{username}:{limit}:{offset}"
 
     # --- ЭТАП 1: Проверка Кэша ---
     if redis:
@@ -62,9 +67,11 @@ async def get_products(
     print(f"❌ CACHE MISS: Идем в базу за товарами для {username}")
     async with pool.acquire() as conn:
             try:
+                # 2. SQL запрос с LIMIT и OFFSET
+                # $2 - limit, $3 - offset
                 products_records = await conn.fetch(
-                    "SELECT id, name, price, owner_username FROM products WHERE owner_username = $1",
-                    username
+                    "SELECT id, name, price, owner_username FROM products WHERE owner_username = $1 LIMIT $2 OFFSET $3",
+                    username, limit, offset
                 )
 
                 # 1. Сначала превращаем записи БД в обычные словари
