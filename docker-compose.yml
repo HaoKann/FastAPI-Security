@@ -52,11 +52,29 @@ services:
       ALGORITHM: ${ALGORITHM}
       ACCESS_TOKEN_EXPIRE_MINUTES: 30
 
+  minio:
+    image: minio/minio:latest
+    container_name: fastapi_minio # API порт (через него код общается с MinIO)
+    ports:
+      - "9000:9000"
+      - "9001:9001" # Console порт (админка в браузере)
+    environment:
+      MINIO_ROOT_USER: minioadmin # Логин суперюзера
+      MINIO_ROOT_PASSWORD: minioadmin # Пароль суперюзера
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data # Чтобы файлы не пропадали при перезапуске
+    networks:
+      - default
+
+  
   # Объявляем том для хранения данных БД
   # Это "Именованный том" (Named Volume).
   # Почему после двоеточия пусто? Потому что мы используем настройки по умолчанию.
 volumes:
   postgres_data:
+  minio_data:
+
 
 
       
