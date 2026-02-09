@@ -2,10 +2,8 @@
 import asyncio
 import asyncpg
 from fastapi import Request
-from config import DATABASE_URL
+from config import settings
 
-# Импортируем готовые настройки из нашего центрального конфига
-from config import DATABASE_URL
 
 # Эта функция будет вызываться один раз при старте приложения
 async def connect_to_db(app):
@@ -14,15 +12,29 @@ async def connect_to_db(app):
     MAX_RETRIES = 5
     WAIT_SECONDS = 5
 
+
+    # --- СБОРКА URL ---
+    # asyncpg нужен "чистый" URL (postgresql://), а не как для SQLAlchemy (postgresql+asyncpg://)
+    if settings.DATABASE_URL:
+        # Если есть готовая ссылка (например, с Render), берем её
+        db_url = settings.DATABASE_URL
+    else:
+        # Собираем вручную из настроек
+        db_url = f"postgresql://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
+    # ------------------
+
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            print(f"DEBUG: Попытка подключения {attempt}/{MAX_RETRIES} к: {DATABASE_URL}")
+            # Используем db_url, который собрали выше (скрываем пароль в логах для безопасности)
+            safe_url = db_url.split('@')[-1]
+            print(f"DEBUG: Попытка подключения {attempt}/{MAX_RETRIES} к: {safe_url}")
+
             # 1. Создаем пул
             # app.state - специальный объект для хранения общих ресурсов
             # Используем DATABASE_URL, который уже содержит все данные
             app.state.pool = await asyncpg.create_pool(
-                dsn=DATABASE_URL,
-                min_size=1,
+                dsn=db_url,
+                min_size=1, 
                 max_size=20
             )
             print('✅ Database connection pool created successfully')

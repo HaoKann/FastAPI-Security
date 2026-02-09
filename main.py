@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 
 # ВАЖНО: config должен импортироваться до модулей, которые его используют.
 # Он сам загрузит нужный .env или .env.test файл.
-import config
+from config import settings
 
 # Импортируем функции для управления жизненным циклом БД
 from database import connect_to_db, close_db_connection
