@@ -28,6 +28,8 @@ from fastapi.responses import FileResponse # <-- Импорт для отдач�
 from strawberry.fastapi import GraphQLRouter
 from graphql_app.schema import schema # Импортируем нашу схему
 
+# S3
+from routers import media
 
 # --- 2. Управление жизненным циклом приложения ---
 # Это как "выключатель" для приложения, нужен для правильного включения и выключения подключения к БД
@@ -145,7 +147,7 @@ if os.getenv('TESTING') != 'True':
 app.include_router(auth_router)
 app.include_router(products_router)
 app.include_router(websocket_router)
-
+app.include_router(media.router)
 
 # --- 5. Корневой эндпоинт (опционально) ---
 # Изменяем главный маршрут: теперь он отдает HTML-файл, а не редирект
