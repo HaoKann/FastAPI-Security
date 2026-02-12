@@ -31,6 +31,8 @@ services:
     build: . # Строим образ из Dockerfile в текущей папке
     container_name: fastapi_app
     restart: always
+    volumes:
+      - .:/app  # Точка (.) это текущая папка Windows, /app это папка контейнера
     command: gunicorn main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
     ports:
       - "8001:8000"

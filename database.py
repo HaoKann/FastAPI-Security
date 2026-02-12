@@ -39,8 +39,7 @@ async def connect_to_db(app):
             )
             print('✅ Database connection pool created successfully')
 
-            # 2. СОЗДАЕМ ТАБЛИЦЫ (Если их нет)
-            await create_tables(app.state.pool)
+
 
             # Если успешно - выходим из функции
             return 
@@ -56,30 +55,7 @@ async def connect_to_db(app):
                 print("Could not connect to DB after multiple attempts")
                 raise e # Если все попытки исчерпаны - падаем
             
-async def create_tables(pool):
-    """Создает необходимые таблицы в БД при старте."""
-    print("🛠️  Checking/Creating tables...")
-    async with pool.acquire() as conn:
-        await conn.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                    username TEXT PRIMARY KEY, 
-                    hashed_password TEXT NOT NULL
-                );
-            ''')
-        
-        # Таблица продуктов
-        # owner_username ссылается на таблицу users, чтобы у товара был владелец
-        await conn.execute('''
-            CREATE TABLE IF NOT EXISTS products (
-                id SERIAL PRIMARY KEY,
-                name TEXT NOT NULL,
-                description TEXT,
-                price INTEGER NOT NULL,
-                owner_username TEXT REFERENCES users(username)
-            );
-        ''')
 
-        print("✅  Tables are ready")
 
 # Эта функция будет вызываться 1 раз при остановке приложения
 async def close_db_connection(app):
