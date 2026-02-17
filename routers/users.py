@@ -8,7 +8,7 @@ router = APIRouter(tags=['Users'])
 @router.patch('/users/me/avatar')
 async def update_avatar(
     file: UploadFile = File(...),
-    current_user: str = Depends(get_current_user), # Требуем, чтобы пользователь был залогинен
+    current_user: dict = Depends(get_current_user), # Требуем, чтобы пользователь был залогинен
     pool = Depends(get_pool) #  Подключаемся к базе
 ):
     # 1. Проверяем формат файла (только картинки)
@@ -19,13 +19,16 @@ async def update_avatar(
     # (FastAPI передает файл потоком, не загружая память)
     avatar_url = await s3_client.upload_file(file)
 
+    # Берем username из словаря current_user
+    username = current_user['username']
+    
     # 3. Записываем ссылку в базу данных
     # Используем $1, $2 для защиты от SQL-инъекций
     async with pool.acquire() as conn:
         await conn.execute(
             "UPDATE users SET avatar_url = $1 WHERE username = $2",
             avatar_url,
-            current_user
+            username
         )
 
     return {
