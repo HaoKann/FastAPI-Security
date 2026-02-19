@@ -183,6 +183,9 @@ def db_pool(monkeypatch):
             
             async def __aexit__(self, *args):
                 pass
+
+            async def close(self):
+                pass
         
         return MockPool()
     
