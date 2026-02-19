@@ -27,12 +27,17 @@ jobs:
 
       # Шаг 2: Создаем временный .env файл
       - name: Create dummy .env file
-        run:
+        run: |
           echo "POSTGRES_DB=test_db" >> .env
           echo "POSTGRES_USER=test_user" >> .env
           echo "POSTGRES_PASSWORD=test_pass" >> .env
           echo "SECRET_KEY=secret" >> .env
           echo "DATABASE_URL=postgresql://test_user:test_pass@db:5432/test_db" >> .env
+          # Фейковые доступы для S3, чтобы Pydantic пропустил валидацию:
+          echo "S3_ACCESS_KEY=testing_key" >> .env
+          echo "S3_SECRET_KEY=testing_secret" >> .env
+          echo "S3_ENDPOINT_URL=http://localhost:9000" >> .env
+          echo "S3_BUCKET_NAME=test-bucket" >> .env
 
       # Шаг 3: ПРОВЕРКА DOCKER (Сборка)
       # Проверяет Dockerfile и requirements.txt на ошибки установки
