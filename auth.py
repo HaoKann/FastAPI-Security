@@ -8,7 +8,7 @@ from fastapi import Depends, HTTPException, status, APIRouter
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, OAuth2PasswordRequestForm
 from database import get_pool # Импортируем нашу зависимость для пула БД
 from pydantic import BaseModel, Field
-
+from typing import Optional
 
 # --- 1. Настройки и объекты ---
 # Загружаем переменные из .env, предоставляя значения по умолчанию для безопасности
@@ -40,6 +40,7 @@ class UserCreate(BaseModel):
 
 class UserOut(BaseModel):
     username: str
+    avatar_url: Optional[str] = None
 
 # --- 3. Утилиты (без изменений) ---
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -81,7 +82,7 @@ async def get_user_from_db(pool: asyncpg.Pool, username: str) -> dict | None:
         return None
 
     async with pool.acquire() as conn:
-        user = await conn.fetchrow('SELECT username, hashed_password FROM users WHERE username = $1 ', username)
+        user = await conn.fetchrow('SELECT username, hashed_password, avatar_url FROM users WHERE username = $1 ', username)
     return dict(user) if user else None
 
 
@@ -89,10 +90,11 @@ async def get_user_from_db(pool: asyncpg.Pool, username: str) -> dict | None:
 # Она напрямую запрашивает у FastAPI токен и пул соединений с БД.
 # ИСПРАВЛЕНО: Функция теперь зависит от HTTPBearer
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    # Декодирует токен, проверяет его валидность и возвращает данные пользователя из БД.
-    # Используется как зависимость в защищенных эндпоинтах.
-    credentials_exception = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    pool: asyncpg.Pool = Depends(get_pool) #  1. Даем функции доступ к БД
+) -> dict:
+    
+    credentials_exception = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentioals")
 
     token = credentials.credentials # Извлекаем токен из объекта credentials
     try:
@@ -103,9 +105,16 @@ async def get_current_user(
         username = payload.get('sub')
         if username is None:
             raise credentials_exception
-        return {'username': username}
     except JWTError:
         raise credentials_exception
+
+    # 👇 2. Идем в базу данных за ПОЛНЫМИ данными пользователя
+    user = await get_user_from_db(pool, username)
+    if user is None:
+        raise credentials_exception
+
+    # Возвращаем полный словарь (там теперь есть username, hashed_password и avatar_url)
+    return user
 
 
 # --- 5. НОВЫЙ БЛОК: Эндпоинты, перенесенные из main.py ---
