@@ -12,6 +12,10 @@
         button:hover { background: #555; }
         #response-area { background: #f0f0f0; padding: 10px; white-space: pre-wrap; word-wrap: break-word; }
         .hidden { display: none; }
+        .profile-header { display: flex; align-items: center; gap: 15px; margin-bottom: 15px; }
+        #avatar-image { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #333; }
+        .upload-section { margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ccc; }
+    </style>
     </style>
 </head>
 <body>
@@ -25,8 +29,19 @@
     </div>
 
     <div id="dashboard-section" class="box hidden">
-        <h3>👋 Привет! Твой токен сохранен.</h3>
-        <p>Токен: <span id="token-display" style="color: green; font-size: 10px;"></span></p>
+        <div class="profile-header">
+            <img id="avatar-image" src="https://via.placeholder.com/80?text=No+Img" alt="Avatar">
+            <div>
+                <h3 style="margin: 0;">👋 Привет, <span id="display-username">пользователь</span>!</h3>
+                <p style="margin: 5px 0 0 0;">Токен: <span id="token-display" style="color: green; font-size: 10px;"></span></p>
+            </div>
+        </div>
+
+        <div class="upload-section">
+            <h4>📸 Обновить аватарку:</h4>
+            <input type="file" id="avatar-input" accept="image/*">
+            <button onclick="uploadAvatar()">Загрузить</button>
+        </div>
         
         <hr>
         

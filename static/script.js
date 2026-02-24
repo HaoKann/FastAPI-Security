@@ -53,13 +53,64 @@ async function getMe() {
 
         const data = await response.json()
         responseArea.innerText = JSON.stringify(data, null, 2)
+        
+        //  НОВАЯ ЛОГИКА: Обновляем интерфейс, если запрос успешен
+        if (response.ok) {
+            document.getElementById('display-username').innerText = data.username
+            
+            // Если у юзера есть аватарка в базе, ставим её. Если нет - останется заглушка.
+            if (data.avatar_url) {
+                document.getElementById('avatar-image').src = data.avatar_url
+            }
+        }
     } catch (error) {
         responseArea.innerText = "Ошибка: " + error
     }
 }
 
+// --- 3. НОВАЯ ФУНКЦИЯ: Загрузка аватарки ---
+async function uploadAvatar() {
+    const token = localStorage.getItem('accessToken')
+    const fileInput = document.getElementById('avatar-input')
+    const responseArea = document.getElementById('response-area')
 
-// --- 3. Функция получения товаров с токеном---
+    // Проверяем, выбрал ли пользователь файл
+    if (fileInput.files.length === 0) {
+        alert('Пожалуйста, выберите картинку!')
+        return
+    }
+
+    const file = fileInput.files[0]
+    const formData = new FormData()
+    // Имя поля 'file' должно ТОЧНО совпадать с названием параметра в FastAPI: def update_avatar(file: UploadFile = File(...))
+    formData.append('file', file);
+
+    try {
+        const response = await fetch(`${API_URL}/users/me/avatar`, {
+            method: 'PATCH',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            },
+            body: formData
+        })
+
+        const data = await response.json()
+        responseArea.innerText = JSON.stringify(data, null, 2)
+
+        if (response.ok) {
+            alert("Аватарка успешно обновлена!")
+            // Сразу отображаем новую картинку на экране
+            document.getElementById('avatar-image').src = data.avatar_url
+        } else {
+            alert('Ошибка загрузки: ' + data.detail)
+        }
+    } catch (error) {
+        responseArea.innerText = "Ошибка сети: " + error
+    }
+
+}
+
+// --- 4. Функция получения товаров с токеном---
 async function getProducts() {
     const token = localStorage.getItem('accessToken') // <-- 1. Достаем токен
     const responseArea = document.getElementById('response-area')
@@ -84,6 +135,9 @@ function showDashboard(token) {
     document.getElementById('login-section').classList.add('hidden')
     document.getElementById('dashboard-section').classList.remove('hidden')
     document.getElementById('token-display').innerText = token.substring(0, 20) + "..."
+
+    // Автоматически запрашиваем профиль, чтобы сразу показать аватарку
+    getMe()
 }
 
 function logout() {
@@ -98,25 +152,3 @@ window.onload = function() {
         showDashboard(token)
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
