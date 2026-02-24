@@ -36,16 +36,15 @@ def test_protected_without_token(client):
     assert response.status_code == 403
     assert response.json() == {'detail': 'Not authenticated'}
 
-def test_protected_with_token(client):
-    # Создаём тестовый токен
-    to_encode = {'sub': 'testuser', 'type': 'access'}
-    expire = datetime.now(UTC) + timedelta(minutes=30)
-    to_encode.update({'exp': expire})
-    token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+def test_protected_with_token(client, auth_headers):
+    # auth_headers уже содержит валидный токен для 'test_user',
+    # который был предварительно "зарегистрирован" фикстурой в БД.
+    response = client.get('/auth/protected', headers=auth_headers)
 
-    response = client.get('/auth/protected', headers={'Authorization': f"Bearer {token}"})
     assert response.status_code == 200
-    assert response.json() == {'message': 'Привет, testuser! Это защищенная зона'}
+    assert response.json() == {'message': 'Привет, test_user! Это защищенная зона'}
+    
+    
 
 
 def test_protected_with_invalid_token(client: TestClient):
