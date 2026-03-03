@@ -17,8 +17,15 @@ async def update_avatar(
     
     # 2. Загружаем файл в MinIO и получаем ссылку
     # (FastAPI передает файл потоком, не загружая память)
-    avatar_url = await s3_client.upload_file(file)
-
+    try:
+        avatar_url = await s3_client.upload_file(file)
+        if not avatar_url:
+            raise Exception("S3 client returned None")
+    except Exception as e:
+        print(f"⚠️ Ошибка загрузки в S3: {e}")
+        # Возвращаем красивую ошибку фронтенду, а не 500 Internal Server Error
+        return HTTPException(status_code=503, detail='Сервис хранения картинок сейчас недоступен. Попробуйте позже')
+    
     # Берем username из словаря current_user
     username = current_user['username']
     
