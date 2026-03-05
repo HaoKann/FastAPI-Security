@@ -9,6 +9,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, OAuth2Pas
 from database import get_pool # Импортируем нашу зависимость для пула БД
 from pydantic import BaseModel, Field
 from typing import Optional
+from s3_service import s3_client
+
 
 # --- 1. Настройки и объекты ---
 # Загружаем переменные из .env, предоставляя значения по умолчанию для безопасности
@@ -162,7 +164,19 @@ async def login_for_token(form_data: OAuth2PasswordRequestForm = Depends(), pool
 
 @router.get('/me', summary='Get current user info', response_model=UserOut)
 async def read_users_me(current_user: dict = Depends(get_current_user)):
-    return current_user # Pydantic автоматически отфильтрует нужные поля
+    # 1. Достаем имя файла аватарки из профиля пользователя
+    avatar_filename = current_user.get('avatar_url')
+
+    # 2. Если аватарка вообще существует (пользователь ее загружал)
+    if avatar_filename:
+        # Генерируем временную ссылку на 1 час через наш S3 сервис
+        presigned_url = await s3_client.get_presigned_url(avatar_filename)
+
+        # Подменяем короткое имя файла на длинную временную ссылку
+        current_user['avatar_url'] = presigned_url
+        
+    # 3. Отдаем профиль фронтенду (Pydantic сам всё отфильтрует)
+    return current_user 
 
 
 # Защищенный эндпоинт для пользователя

@@ -5,11 +5,19 @@ import uuid # Чтобы создавать уникальные имена (ava
 
 class S3Service:
     def __init__(self):
+        # Хитрый трюк: вытаскиваем регион (us-east-005) из ссылки Backblaze для правильной генерации подписей
+        region = 'us-east-1'
+        if 'backblaze' in settings.S3_ENDPOINT_URL:
+            # Превращаем "https://s3.us-east-005.backblazeb2.com" -> "us-east-005"
+            region = settings.S3_ENDPOINT_URL.replace('https://', '').split('.')[1]
+
+
         # Конфигурация для подключения к MinIO/AWS S3
         self.config = {
             "endpoint_url": settings.S3_ENDPOINT_URL,
             "aws_access_key_id": settings.S3_ACCESS_KEY,
             "aws_secret_access_key": settings.S3_SECRET_KEY,
+            "region_name": region # <-- Обязательно для облака!
         }
         self.bucket = settings.S3_BUCKET_NAME
         self.session = aioboto3.Session()
@@ -33,22 +41,38 @@ class S3Service:
                     unique_filename,
                     ExtraArgs={"ContentType": file.content_type} # Чтобы браузер понимал, что это картинка
                 )
-            
-            # 4. Формируем ссылку
-            # Внутри Docker ссылка выглядит как http://minio:9000/...
-            file_url = f"{settings.S3_ENDPOINT_URL}/{self.bucket}/{unique_filename}"
 
-            # Браузер не знает хост "minio", он знает "localhost".
-            # Меняем minio на localhost, чтобы можно было открыть картинку.
-            if "minio" in file_url:
-                file_url = file_url.replace('minio','localhost')
-
-            return file_url
+                # Возвращаем просто имя файла, чтобы записать его в БД (например, '123-456.png')
+                return unique_filename
         
         except Exception as e:
             print(f"❌ S3 Upload Error: {e}")    
             raise HTTPException(status_code=500, detail="Failed to upload file")
 
+    async def get_presigned_url(self, object_name: str, expires_in: int = 3600) -> str:
+        """
+        Генерирует временную ссылку (пропуск) на просмотр приватного файла.
+        expires_in = 3600 (ссылка работает 1 час).
+        """
+        if not object_name:
+            return None
+        
+        # Защита: если в базе осталась старая полная ссылка (http...), вытащим из нее только имя
+        if object_name.startswith('http'):
+            object_name = object_name.split('/')[-1]
+
+        try:
+            async with self.session.client('s3', **self.config) as s3:
+                # Генерируем временный URL
+                url = await s3.generate_presigned_url(
+                    ClientMethod='get_object',
+                    Params={'Bucket': self.bucket, 'Key': object_name},
+                    ExpiresIn=expires_in
+                )
+                return url
+        except Exception as e:
+            print(f"❌ Error generating presigned URL: {e}")
+            return None
 
 # Создаем один экземпляр, чтобы использовать его везде
 s3_client = S3Service()
