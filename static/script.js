@@ -98,9 +98,9 @@ async function uploadAvatar() {
         responseArea.innerText = JSON.stringify(data, null, 2)
 
         if (response.ok) {
-            alert("Аватарка успешно обновлена!")
-            // Сразу отображаем новую картинку на экране
-            document.getElementById('avatar-image').src = data.avatar_url
+            // Вместо ручной вставки короткой ссылки, просто вызываем getMe()
+            // Он сам сходит на бэкенд, получит временный URL на 1 час и отрисует картинку!
+            getMe()
         } else {
             alert('Ошибка загрузки: ' + data.detail)
         }
@@ -134,7 +134,6 @@ async function getProducts() {
 function showDashboard(token) {
     document.getElementById('login-section').classList.add('hidden')
     document.getElementById('dashboard-section').classList.remove('hidden')
-    document.getElementById('token-display').innerText = token.substring(0, 20) + "..."
 
     // Автоматически запрашиваем профиль, чтобы сразу показать аватарку
     getMe()
