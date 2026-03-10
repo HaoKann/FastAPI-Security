@@ -2,6 +2,7 @@ from typing import List, Optional
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status, Request
 from pydantic import BaseModel
+from fastapi.encoders import jsonable_encoder
 import json
 
 # Импортируем зависимости из наших центральных модулей
@@ -46,10 +47,10 @@ async def get_products(
     """Возвращает список продуктов текущего пользователя с кэшированием."""
     username = current_user['username']
 
-    # Достаем Redis из состояния приложения
-    redis = request.app.state.redis
-
-    # 2. УНИКАЛЬНЫЙ КЛЮЧ ДЛЯ ЮЗЕРА
+    #  Безопасно достаем Redis (если его нет, вернет None)
+    redis = getattr(request.app.state, 'redis', None)
+    
+    #  УНИКАЛЬНЫЙ КЛЮЧ ДЛЯ ЮЗЕРА
     # Если использовать просто "products", данные перемешаются между юзерами!
     # ВАЖНО: Ключ кэша теперь должен зависеть от страницы!
     # Иначе на странице 2 мы увидим кэш от страницы 1.
@@ -57,11 +58,14 @@ async def get_products(
 
     # --- ЭТАП 1: Проверка Кэша ---
     if redis:
-        cached_data = await redis.get(CACHE_KEY)
-        if cached_data:
-            print(f"✅ CACHE HIT: Товары для пользователя {username} из Redis")
-            # Возвращаем список словарей. Pydantic сам превратит их в список Product
-            return json.loads(cached_data)
+        try:
+            cached_data = await redis.get(CACHE_KEY)
+            if cached_data:
+                print(f"✅ CACHE HIT: Товары для пользователя {username} из Redis")
+                # Возвращаем список словарей. Pydantic сам превратит их в список Product
+                return json.loads(cached_data)
+        except Exception as e:
+            print(f"⚠️ Ошибка чтения из Redis (игнорируем и идем в БД): {e}")
 
     # --- ЭТАП 2: Запрос в БД ---
     print(f"❌ CACHE MISS: Идем в базу за товарами для {username}")
@@ -74,13 +78,18 @@ async def get_products(
                     username, limit, offset
                 )
 
+                # ВАЖНО: jsonable_encoder безопасно переварит UUID и Decimal!
                 # 1. Сначала превращаем записи БД в обычные словари
-                products_data = [dict(p) for p in products_records]
+                products_data = jsonable_encoder([dict(p) for p in products_records])
 
                 # --- ЭТАП 3: Сохранение в Кэш (ЭТОГО НЕ БЫЛО) ---
                 if redis:
-                    # Превращаем список словарей в строку и сохраняем на 60 сек
-                    await redis.set(CACHE_KEY, json.dumps(products_data), ex=60)
+                    try:
+                        # Теперь json.dumps сработает без ошибок
+                        # Превращаем список словарей в строку и сохраняем на 60 сек
+                        await redis.set(CACHE_KEY, json.dumps(products_data), ex=60)
+                    except Exception as e:
+                      print(f"⚠️ Ошибка записи в Redis: {e}")  
 
                 # Возвращаем словари (Pydantic сам проверит их по схеме response_model)
                 return products_data

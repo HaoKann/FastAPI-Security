@@ -176,8 +176,39 @@ async function getProducts() {
                 'Authorization': `Bearer ${token}`
             }
         }) 
-        const data = await response.json()
-        responseArea.innerText =  JSON.stringify(data, null, 2)
+
+        // Если сервер упал (например, 500 ошибка), ловим текст ошибки, чтобы не было "Unexpected token I"
+        if (!response.ok) {
+            const errorText = await response.text()
+            responseArea.innerText = `Ошибка сервера (${response.status}): ${errorText}`
+            return
+        }
+        
+
+       // РИСУЕМ КРАСИВЫЕ КАРТОЧКИ! 🎨
+        let html = `
+            <h3 style="margin-bottom: 15px; color: #667eea;">📦 Витрина товаров</h3>
+            <div style="display: flex; flex-wrap: wrap; gap: 15px;">
+        `;
+        
+        if (products.length === 0) {
+            html += `<p style="color: #718096; width: 100%;">У вас пока нет ни одного товара.</p>`;
+        } else {
+            products.forEach(p => {
+                html += `
+                <div style="background: white; border: 2px solid #edf2f7; border-radius: 12px; padding: 20px; width: 220px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); transition: transform 0.2s;">
+                    <h4 style="margin-bottom: 10px; color: #2d3748; font-size: 1.2em;">${p.name}</h4>
+                    <p style="color: #48bb78; font-weight: 800; font-size: 1.4em; margin-bottom: 10px;">$${p.price}</p>
+                    <span style="background: #edf2f7; color: #4a5568; padding: 4px 8px; border-radius: 6px; font-size: 0.8em;">ID: ${p.id.substring(0,6)}...</span>
+                </div>
+                `;
+            });
+        }
+        html += `</div>`;
+        
+        // Вставляем карточки прямо в наш блок ответа
+        responseArea.innerHTML = html;
+        
     } catch (error) {
         responseArea.innerText = "Ошибка: " + error
     }
