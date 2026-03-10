@@ -1,6 +1,57 @@
 const API_URL = "" // Пустая строка, так как фронт и бэк на одном домене
 
-// --- 1. Функция Входа (Login) ---
+
+// --- Функция переключения между Входом и Регистрацией ---
+function toggleAuth(mode) {
+    if (mode === 'register') {
+        document.getElementById('login-box').classList.add('hidden')
+        document.getElementById('register-box').classList.remove('hidden')
+    } else {
+        document.getElementById('register-box').classList.add('hidden')
+        document.getElementById('login-box').classList.remove('hidden')
+    }
+}
+
+// --- Функция Регистрации ---
+async function register() {
+    const usernameInput = document.getElementById('reg-username').value
+    const passwordInput = document.getElementById('reg-password').value
+    const responseArea = document.getElementById('response-area')
+
+    // ВАЖНО: В отличие от логина, здесь мы отправляем обычный JSON!
+    const payload = {
+        username: usernameInput,
+        password: passwordInput
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/auth/register`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json' // Говорим серверу, что шлем JSON
+            },
+            body: JSON.stringify(payload)
+        })
+
+        const data = await response.json()
+        responseArea.innerText = JSON.stringify(data, null, 2)
+
+        if (response.ok) {
+            // Твой бэкенд сразу выдает токены при регистрации! 
+            // Значит, нам не нужно просить юзера логиниться заново. Мы сразу пускаем его внутрь!
+            alert('Аккаунт успешно создан! Вы вошли в систему.');
+            localStorage.setItem('accessToken', data.access_token)
+            showDashboard(data.access_token)
+        } else {
+            alert('Ошибка регистрации: ' + data.detail)
+        }
+    } catch (error) {
+        responseArea.innerText = 'Ошибка сети: ' + error
+    }
+
+}
+
+//  Функция Входа (Login) ---
 async function login() {
     const usernameInput = document.getElementById('username').value
     const passwordInput = document.getElementById('password').value
@@ -35,6 +86,8 @@ async function login() {
         responseArea.innerText = "Ошибка сети: " + error
     }
 }
+
+
 
 
 // --- 2. Функция получения данных о себе (Защищенный роут) ---
@@ -132,7 +185,7 @@ async function getProducts() {
 
 // --- Утилиты для интерфейса ---
 function showDashboard(token) {
-    document.getElementById('login-section').classList.add('hidden')
+    document.getElementById('auth-section').classList.add('hidden')
     document.getElementById('dashboard-section').classList.remove('hidden')
 
     // Автоматически запрашиваем профиль, чтобы сразу показать аватарку

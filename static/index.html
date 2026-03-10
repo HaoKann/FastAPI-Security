@@ -255,11 +255,28 @@
     <div class="container">
         <h1><span class="emoji">🔐</span> FastAPI Auth Client</h1>
 
-        <div id="login-section" class="box">
-            <h3><span class="emoji">🚪</span> Вход в систему</h3>
-            <input type="text" id="username" placeholder="Введите username">
-            <input type="password" id="password" placeholder="Введите пароль">
-            <button onclick="login()">Войти</button>
+        <div id="auth-section" class="box">
+            
+            <div id="login-box">
+                <h3><span class="emoji">🚪</span> Вход в систему</h3>
+                <input type="text" id="username" placeholder="Введите username">
+                <input type="password" id="password" placeholder="Введите пароль">
+                <button onclick="login()">Войти</button>
+                <p style="text-align: center; margin-top: 15px;">
+                    Нет аккаунта? <a href="#" onclick="toggleAuth('register')" style="color: #667eea; text-decoration: none; font-weight: bold;">Зарегистрироваться</a>
+                </p>
+            </div>
+
+            <div id="register-box" class="hidden">
+                <h3><span class="emoji">✨</span> Создать аккаунт</h3>
+                <input type="text" id="reg-username" placeholder="Придумайте username">
+                <input type="password" id="reg-password" placeholder="Придумайте пароль">
+                <button onclick="register()" class="secondary">Зарегистрироваться</button>
+                <p style="text-align: center; margin-top: 15px;">
+                    Уже есть аккаунт? <a href="#" onclick="toggleAuth('login')" style="color: #f5576c; text-decoration: none; font-weight: bold;">Войти</a>
+                </p>
+            </div>
+
         </div>
 
         <div id="dashboard-section" class="box hidden">
@@ -296,6 +313,6 @@
         </div>
     </div>
 
-    <script src="/static/script.js"></script>
+    <script src="/static/script.js?v=3"></script>
 </body>
 </html>

@@ -125,7 +125,7 @@ async def get_current_user(
 # Принимает данные пользователя, проверяет, не существует ли такой username, хэширует пароль и сохраняет в users. 
 # Затем выдаёт токены.
 @router.post('/register', response_model=Token)
-# user: UserCreate — объект, созданный из JSON-запроса (например, {"username": "alice", "password": "password123"}).
+# user_in: UserCreate — объект, созданный из JSON-запроса (например, {"username": "alice", "password": "password123"}).
 async def register(user_in: UserCreate, pool: asyncpg.Pool = Depends(get_pool)):
     try:
         # Асинхронно проверяет наличие пользователя.
