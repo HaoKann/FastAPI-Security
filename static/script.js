@@ -215,6 +215,57 @@ async function getProducts() {
     }
 }
 
+// --- 5. Функция создания нового товара ---
+async function createProduct() {
+    const token = localStorage.getItem('accessToken')
+    const nameInput = document.getElementById('new-product-name')
+    const priceInput = document.getElementById('new-product-price')
+    const responseArea = document.getElementById('response-area')
+
+
+    
+    // Проверяем, что поля не пустые
+    if (!nameInput.value || !priceInput.value) {
+        alert("Пожалуйста, введите название и цену товара!")
+        return
+    }
+
+    // Собираем данные в JSON (в таком виде их ждет Pydantic модель на бэкенде)
+    const payload = {
+        name: nameInput.value,
+        price: parseFloat(priceInput.value)
+    }
+
+    try {
+        // Делаем POST-запрос на создание товара
+        const response = await fetch(`${API_URL}/products/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(payload)
+        })
+
+        if (response.ok) {
+            // Очищаем поля ввода после успешного создания
+            nameInput.value = ''
+            priceInput.value = ''
+
+            // МАГИЯ: Сразу запрашиваем обновленный список товаров, 
+            // чтобы новая карточка мгновенно появилась на экране!
+            getProducts()
+        } else {
+            const errorData = await response.json()
+            alert('Ошибка создания товара: '+ (errorData.detail || 'Неизвестная ошибка'))
+        } 
+
+    } catch (error){
+        responseArea.innerText = "Ошибка сети: " + error
+    }
+}
+
+
 // --- Утилиты для интерфейса ---
 function showDashboard(token) {
     document.getElementById('auth-section').classList.add('hidden')

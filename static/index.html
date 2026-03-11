@@ -303,6 +303,13 @@
             </div>
 
             <hr>
+
+            <h4><span class="emoji">➕</span> Добавить новый товар</h4>
+            <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+                <input type="text" id="new-product-name" placeholder="Название товара" style="margin-bottom: 0; flex: 1;">
+                <input type="number" id="new-product-price" placeholder="Цена ($)" style="margin-bottom: 0; width: 120px;">
+                <button onclick="createProduct()" style="white-space: nowrap;">Добавить</button>
+            </div>
             
             <button onclick="logout()" class="logout" style="width: 100%;">Выйти из системы</button>
         </div>
@@ -313,6 +320,6 @@
         </div>
     </div>
 
-    <script src="/static/script.js?v=3"></script>
+    <script src="/static/script.js?v=4"></script>
 </body>
 </html>
