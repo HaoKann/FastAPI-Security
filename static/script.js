@@ -184,6 +184,7 @@ async function getProducts() {
             return
         }
         
+        const products = await response.json()
 
        // РИСУЕМ КРАСИВЫЕ КАРТОЧКИ! 🎨
         let html = `
