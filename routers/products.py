@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status, 
 from pydantic import BaseModel
 from fastapi.encoders import jsonable_encoder
 import json
+from uuid import UUID
 
 # Импортируем зависимости из наших центральных модулей
 from auth import get_current_user
@@ -19,7 +20,7 @@ router = APIRouter(
 
 # --- Модели Pydantic (относятся только к продуктам) ---
 class Product(BaseModel):
-    id: int
+    id: UUID
     name: str
     price: float
     owner_username: str
