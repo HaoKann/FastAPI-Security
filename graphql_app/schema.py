@@ -9,7 +9,7 @@ from graphql_app.auth import authenticate_user
 # Поля должны совпадать с тем, что вернет база данных.
 @strawberry.type
 class ProductType:
-    id: int
+    id: strawberry.ID # strawberry.ID (это спец-тип для GraphQL, понимает UUID)
     name: str
     description: Optional[str] # Optional означает, что поле может быть null(пустым)
     price: int

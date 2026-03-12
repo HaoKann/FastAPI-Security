@@ -128,7 +128,7 @@ async def create_product(product_data: ProductCreate, background_tasks: Backgrou
 # Эндпоинт для удаления продукта
 @router.delete('/{product_id}', status_code=status.HTTP_204_NO_CONTENT)
 async def delete_product(
-    product_id: int,
+    product_id: UUID,
     background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool)
@@ -169,7 +169,7 @@ async def delete_product(
 # Эндпоинт для обновления продукта
 @router.put('/{product_id}', response_model=Product)
 async def update_product(
-    product_id: int,
+    product_id: UUID,
     products_update: ProductUpdate,
     background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
