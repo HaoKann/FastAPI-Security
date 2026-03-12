@@ -83,12 +83,9 @@ def db_pool(monkeypatch):
             async def fetchrow(self, query, *args):
                 print(f"DEBUG fetchrow: {query[:50]}... args={args}")
                 
-                global fake_product_id_counter
-
                 # 1. Создание продукта
                 if "INSERT INTO products" in query:
                     new_id = str(uuid.uuid4()) # <-- Генерируем настоящий UUID
-
                     new_product = {
                         "id": new_id, "name": args[0],
                         "price": args[1], "owner_username": args[2]
@@ -105,21 +102,34 @@ def db_pool(monkeypatch):
 
             # 3. Поиск продукта перед удалением (SELECT owner_username...)
                 if "SELECT owner_username FROM products" in query:
-                    product_id = int(args[0])
+                    product_id = str(args[0])
                     # Ищем продукт в списке
                     for p in fake_products_db:
-                        if p['id'] == product_id:
+                        if str(p['id']) == product_id:
                             return {"owner_username": p["owner_username"]}
-                        return None
+                    return None
+                
+                # 2. Удаление продукта
+                if "DELETE FROM products" in query:
+                    product_id = str(args[0])
+                    global fake_products_db
+                    # Оставляем в списке только те продукты, у которых ID НЕ совпадает
+                    initial_len = len(fake_products_db)
+                    fake_products_db = [p for p in fake_products_db if str(p["id"]) != product_id]
+
+                    if len(fake_products_db) < initial_len:
+                        print(f"!!! УСПЕХ: Продукт ID {product_id} удален из mock DB")
+                    return "OK"
+                
                     
                 # 4. Обновление продукта (UPDATE ... RETURNING *)
                 if "UPDATE products" in query:
-                    product_id = int(args[2])
+                    product_id = str(args[2])
                     new_name = args[0]
                     new_price = args[1]
 
                     for i, p in enumerate(fake_products_db):
-                        if p['id'] == product_id:
+                        if str(p['id']) == product_id:
                             # Эмуляция COALESCE: если пришло None, оставляем старое
                             updated_name = new_name if new_name is not None else p['name']
                             updated_price = new_price if new_price is not None else p['price']
@@ -132,9 +142,11 @@ def db_pool(monkeypatch):
                             return fake_products_db[i] # Возвращаем обновленный словарь
                     return None
                 
+                # Если ни один запрос не подошел
                 return None
 
-
+                
+                
             # имитирует conn.fetch(...) для списков (SELECT * FROM ...)
             async def fetch(self, query, *args):
                 if "SELECT" in query and "products" in query:
@@ -153,19 +165,8 @@ def db_pool(monkeypatch):
                     print(f"!!! УСПЕХ: User '{args[0]}' добавлен в mock DB.")
                     return "OK"
                 
-                # 2. Удаление продукта
-                if "DELETE FROM products" in query:
-                    product_id = int(args[0])
-                    global fake_products_db
-                    # Оставляем в списке только те продукты, у которых ID НЕ совпадает
-                    initial_len = len(fake_products_db)
-                    fake_products_db = [p for p in fake_products_db if p["id"] != product_id]
-
-                    if len(fake_products_db) < initial_len:
-                        print(f"!!! УСПЕХ: Продукт ID {product_id} удален из mock DB")
-                    return "OK"
                 
-                return "OK"
+                
             
             # async def __aenter__ и async def __aexit__ — позволяют использовать объект в async with (контекстный менеджер)
             async def __aenter__(self):

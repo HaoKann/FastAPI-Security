@@ -121,8 +121,9 @@ def test_delete_product_success(client: TestClient, auth_headers: dict):
 
 # --- Тест 6: Удаление несуществующего продукта ---
 def test_delete_product_not_found(client: TestClient, auth_headers: dict):
-    """Тест: Попытка удалить продукт с ID 99999."""
-    delete_resp = client.delete("/products/99999", headers=auth_headers)
+    """Тест: Попытка удалить продукт с несуществующим UUID."""
+    fake_uuid = "00000000-0000-0000-0000-000000000000"
+    delete_resp = client.delete(f"/products/{fake_uuid}", headers=auth_headers)
     assert delete_resp.status_code == status.HTTP_404_NOT_FOUND
 
 
