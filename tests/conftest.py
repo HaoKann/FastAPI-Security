@@ -81,6 +81,8 @@ def db_pool(monkeypatch):
         class MockConnection:
             # имитирует conn.fetchrow(...)
             async def fetchrow(self, query, *args):
+                global fake_products_db
+
                 print(f"DEBUG fetchrow: {query[:50]}... args={args}")
                 
                 # 1. Создание продукта
@@ -112,7 +114,6 @@ def db_pool(monkeypatch):
                 # 2. Удаление продукта
                 if "DELETE FROM products" in query:
                     product_id = str(args[0])
-                    global fake_products_db
                     # Оставляем в списке только те продукты, у которых ID НЕ совпадает
                     initial_len = len(fake_products_db)
                     fake_products_db = [p for p in fake_products_db if str(p["id"]) != product_id]
