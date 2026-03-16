@@ -146,7 +146,23 @@ def db_pool(monkeypatch):
                 # Если ни один запрос не подошел
                 return None
 
+            async def execute(self, query, *args):
+                print(f"DEBUG execute: {query[:50]}... args={args}")
+                global fake_products_db
+
+                if "DELETE FROM products" in query:
+                    product_id = str(args[0])
+                    initial_len = len(fake_products_db)
+
+                    # Оставляем только те продукты, ID которых не совпадает с удаляемым
+                    fake_products_db = [p for p in fake_products_db if str(p['id']) != product_id]
+
+                    if len(fake_products_db) < initial_len:
+                        print(f"!!! УСПЕХ: Продукт ID {product_id} удален через execute")
+                    return "DELETE 1" # asyncpg.execute обычно возвращает строку статуса
                 
+                return "OK"
+
                 
             # имитирует conn.fetch(...) для списков (SELECT * FROM ...)
             async def fetch(self, query, *args):
