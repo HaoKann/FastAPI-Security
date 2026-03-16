@@ -186,7 +186,7 @@ async function getProducts() {
         
         const products = await response.json()
 
-       // РИСУЕМ КРАСИВЫЕ КАРТОЧКИ! 🎨
+       // РИСУЕМ КРАСИВЫЕ КАРТОЧКИ С КНОПКАМИ! 🎨
         let html = `
             <h3 style="margin-bottom: 15px; color: #667eea;">📦 Витрина товаров</h3>
             <div style="display: flex; flex-wrap: wrap; gap: 15px;">
@@ -197,10 +197,16 @@ async function getProducts() {
         } else {
             products.forEach(p => {
                 html += `
-                <div style="background: white; border: 2px solid #edf2f7; border-radius: 12px; padding: 20px; width: 220px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); transition: transform 0.2s;">
+                <div style="background: white; border: 2px solid #edf2f7; border-radius: 12px; padding: 20px; width: 220px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); transition: transform 0.2s; display: flex; flex-direction: column;">
                     <h4 style="margin-bottom: 10px; color: #2d3748; font-size: 1.2em;">${p.name}</h4>
                     <p style="color: #48bb78; font-weight: 800; font-size: 1.4em; margin-bottom: 10px;">$${p.price}</p>
-                    <span style="background: #edf2f7; color: #4a5568; padding: 4px 8px; border-radius: 6px; font-size: 0.8em;">ID: ${p.id.substring(0,6)}...</span>
+                    <div style="margin-bottom: 15px;">
+                        <span style="background: #edf2f7; color: #4a5568; padding: 4px 8px; border-radius: 6px; font-size: 0.8em;">ID: ${p.id.substring(0,6)}...</span>
+                    </div>
+                    <div style="margin-top: auto; display: flex; gap: 8px;">
+                        <button onclick="editProduct('${p.id}', '${p.name}', ${p.price})" style="background: #cbd5e0; color: #2d3748; padding: 6px 10px; font-size: 0.9em; flex: 1; border-radius: 6px; border: none; cursor: pointer;">✏️ Цена</button>
+                        <button onclick="deleteProduct('${p.id}')" style="background: #fc8181; color: white; padding: 6px 10px; font-size: 0.9em; flex: 1; border-radius: 6px; border: none; cursor: pointer;">🗑️ Удал.</button>
+                    </div>
                 </div>
                 `;
             });
@@ -262,6 +268,65 @@ async function createProduct() {
 
     } catch (error){
         responseArea.innerText = "Ошибка сети: " + error
+    }
+}
+
+
+// --- Функция обновления цены товара ---
+async function editProduct(productID, currentName, currentPrice) {
+    const newPriceStr = prompt(`Введите новую цену для товара "${currentName}":`, currentPrice)
+
+    if (newPriceStr === null) return // Юзер нажал "Отмена"
+
+    const newPrice = parseFloat(newPriceStr)
+    if (isNaN(newPrice) || newPrice <= 0) {
+        alert("Пожалуйста, введите корректную цену (число больше 0)!");
+        return
+    }
+
+    const token = localStorage.getItem('accessToken')
+    try {
+        const response = await fetch(`${API_URL}/products/${productID}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ price: newPrice })
+        })
+
+        if (response.ok) {
+            getProducts()
+        } else {
+            const data = await response.json()
+            alert("Ошибка при обновлении: " + (data.detail || "Неизвестная ошибка"));
+        }
+    } catch (error) {
+        alert("Ошибка сети: " + error)
+    }
+}
+
+// --- Функция удаления товара ---
+async function deleteProduct(productId) {
+    if (!confirm("Вы уверены, что хотите удалить этот товар?")) return;
+
+    const token = localStorage.getItem('accessToken');
+    try {
+        const response = await fetch(`${API_URL}/products/${productId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (response.ok) {
+            getProducts(); // Мгновенно перерисовываем витрину!
+        } else {
+            const data = await response.json();
+            alert("Ошибка при удалении: " + (data.detail || "Неизвестная ошибка"));
+        }
+    } catch (error) {
+        alert("Ошибка сети: " + error);
     }
 }
 
