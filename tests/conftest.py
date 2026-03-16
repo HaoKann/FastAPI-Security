@@ -148,9 +148,10 @@ def db_pool(monkeypatch):
 
             async def execute(self, query, *args):
                 print(f"DEBUG execute: {query[:50]}... args={args}")
-                global fake_products_db
+                
 
                 if "DELETE FROM products" in query:
+                    global fake_products_db
                     product_id = str(args[0])
                     initial_len = len(fake_products_db)
 
@@ -161,6 +162,16 @@ def db_pool(monkeypatch):
                         print(f"!!! УСПЕХ: Продукт ID {product_id} удален через execute")
                     return "DELETE 1" # asyncpg.execute обычно возвращает строку статуса
                 
+                 # 1. Регистрация пользователя
+                # Эмулируем INSERT INTO users (username, hashed_password) VALUES ($1, $2)
+                if isinstance(query, str) and "INSERT INTO users" in query:
+                    # Получаем доступ к "фейковой" БД
+                    global existing_users
+                    # Добавляем пользователя
+                    existing_users.add(args[0])
+                    print(f"!!! УСПЕХ: User '{args[0]}' добавлен в mock DB.")
+                    return "OK"
+
                 return "OK"
 
                 
@@ -170,21 +181,8 @@ def db_pool(monkeypatch):
                    return [p for p in fake_products_db if p["owner_username"] == args[0]]
                 return []
              
-            # имитирует conn.execute(...) для INSERT (без возврата) и DELETE ---
-            async def execute(self, query, *args):
-                # 1. Регистрация пользователя
-                # Эмулируем INSERT INTO users (username, hashed_password) VALUES ($1, $2)
-                if isinstance(query, str) and "INSERT INTO users" in query:
-                    # Получаем доступ к "фейковой" БД
-                    global existing_users
-                    # Добавляем пользователя
-                    existing_users.add(args[0])
-                    print(f"!!! УСПЕХ: User '{args[0]}' добавлен в mock DB.")
-                    return "OK"
+           
                 
-                
-                
-            
             # async def __aenter__ и async def __aexit__ — позволяют использовать объект в async with (контекстный менеджер)
             async def __aenter__(self):
                 return self
