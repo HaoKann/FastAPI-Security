@@ -106,7 +106,13 @@ async def get_products(
 # Защищённый эндпоинт для создания нового продукта, доступный только авторизованным пользователям.
 # ИСПРАВЛЕНО: Эндпоинт теперь принимает Pydantic-модель ProductCreate
 @router.post('/', response_model=Product)
-async def create_product(product_data: ProductCreate, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user), pool: asyncpg.Pool = Depends(get_pool)):
+async def create_product(
+            product_data: ProductCreate, 
+            background_tasks: BackgroundTasks, 
+            request: Request,
+            current_user: dict = Depends(get_current_user), 
+            pool: asyncpg.Pool = Depends(get_pool),
+            ):
     """Создает новый продукт для текущего пользователя."""
     username = current_user['username']
     async with pool.acquire() as conn:
@@ -121,6 +127,19 @@ async def create_product(product_data: ProductCreate, background_tasks: Backgrou
 
                 new_product = Product(**dict(new_product_record))
                 background_tasks.add_task(manager.broadcast, f"Новый продукт: {new_product.model_dump_json()}")
+
+                # --- СБРОС КЭША REDIS ---
+                redis = getattr(request.app.state, 'redis', None)
+                if redis:
+                    try:
+                        # Ищем все ключи кэша продуктов текущего юзера (для всех страниц)
+                        cache_keys = await redis.keys(f"products:{username}:*")
+                        if cache_keys:
+                            await redis.delete(*cache_keys)
+                            print(f"🧹 Кэш сброшен для пользователя {username}")
+                    except Exception as e:
+                        print(f"⚠️ Ошибка сброса кэша: {e}")
+
                 return new_product
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Ошибка создания продукта: {str(e)}")
@@ -130,6 +149,7 @@ async def create_product(product_data: ProductCreate, background_tasks: Backgrou
 async def delete_product(
     product_id: UUID,
     background_tasks: BackgroundTasks,
+    request: Request,
     current_user: dict = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool)
 ):
@@ -157,6 +177,18 @@ async def delete_product(
             # 4. Отправляем уведомление
             background_tasks.add_task(manager.broadcast, f"Продукт ID {product_id} был удален пользователем {username}")
 
+            # --- СБРОС КЭША REDIS ---
+            redis = getattr(request.app.state, 'redis', None)
+            if redis:
+                try:
+                    # Ищем все ключи кэша продуктов текущего юзера (для всех страниц)
+                    cache_keys = await redis.keys(f"products:{username}:*")
+                    if cache_keys:
+                        await redis.delete(*cache_keys)
+                        print(f"🧹 Кэш сброшен для пользователя {username}")
+                except Exception as e:
+                    print(f"⚠️ Ошибка сброса кэша: {e}")
+
             # Возвращаем 204 (Успех, нет контента)
             return
         
@@ -172,6 +204,7 @@ async def update_product(
     product_id: UUID,
     products_update: ProductUpdate,
     background_tasks: BackgroundTasks,
+    request: Request,
     current_user: dict = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_pool)
 ):
@@ -212,6 +245,18 @@ async def update_product(
 
             # 4. Уведомление
             background_tasks.add_task(manager.broadcast, f"Продукт обновлен: {updated_product.model_dump_json()}")
+
+            # --- СБРОС КЭША REDIS ---
+            redis = getattr(request.app.state, 'redis', None)
+            if redis:
+                try:
+                    # Ищем все ключи кэша продуктов текущего юзера (для всех страниц)
+                    cache_keys = await redis.keys(f"products:{username}:*")
+                    if cache_keys:
+                        await redis.delete(*cache_keys)
+                        print(f"🧹 Кэш сброшен для пользователя {username}")
+                except Exception as e:
+                    print(f"⚠️ Ошибка сброса кэша: {e}")
 
             return updated_product
         

@@ -113,6 +113,13 @@ async function getMe() {
             
             // Если у юзера есть аватарка в базе, ставим её. Если нет - останется заглушка.
             if (data.avatar_url) {
+                let finalAvatarUrl = data.avatar_url
+                
+                // Меняем докеровский адрес на локальный, чтобы браузер понял, откуда качать
+                if (finalAvatarUrl.includes('minio:9000')) {
+                    finalAvatarUrl = finalAvatarUrl.replace('minio:9000', 'localhost:9000')
+                }
+
                 document.getElementById('avatar-image').src = data.avatar_url
             }
         }
