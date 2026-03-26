@@ -1,8 +1,11 @@
 # Управление соединением с базой данных.
 import asyncio
 import asyncpg
-from fastapi import Request
+from fastapi import Request, Depends, BackgroundTasks
 from config import settings
+from repositories.product_repository import ProductRepository
+from services.product_service import ProductService
+from websocket import manager
 
 
 # Эта функция будет вызываться один раз при старте приложения
@@ -72,5 +75,25 @@ def get_pool(request: Request) -> asyncpg.Pool:
     return request.app.state.pool
 
 
+# Dependency Injection 
+async def get_product_service(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    pool: asyncpg.Pool = Depends(get_pool) 
+) -> ProductService:
+    '''
+    Эта функция собирает наш Сервис как конструктор и выдаёт его роутеру
+    '''
+    # 1 Достаем Redis из приложения
+    redis = getattr(request.app.state, 'redis', None)
 
+    # 2 Инициализация репозитория передавая ему пул БД
+    repo = ProductRepository(pool)
+
+    return ProductService(
+        repository=repo,
+        redis=redis,
+        background_tasks=background_tasks,
+        manager=manager
+    )
 

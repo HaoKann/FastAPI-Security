@@ -51,3 +51,62 @@ class ProductService:
                 pass
 
         return products_data
+
+    async def create_product(self, username: str, name: str, price: float):
+        # 1 Создаем товар в БД через репозиторий
+        new_product = await self.repo.create(name, price, username)
+        if not new_product:
+            raise HTTPException(status_code=500, detail="Не удалось создать продукт")
+        
+        # 2 Отправляем уведомления через WebSocket(если есть подключение)
+        if self.background_tasks and self.manager:
+            self.background_tasks.add_task(
+                self.manager.broadcast,
+                f"Новый продукт {json.dumps(jsonable_encoder(new_product))}"
+            )
+
+        # 3 Сбрасываем кеш
+        await self._clear_cache(username)
+        return new_product
+    
+
+    async def delete_product(self, username: str, product_id: UUID):
+        # 1 Сначала достаем товар для проверки права
+        product = await self.repo.get_by_id(product_id)
+        if product is None:
+            raise HTTPException(status_code=404, detail='Товарт не найден')
+        
+        # Проверка что только владелец может удалить свой товар
+        if product['owner_username'] != username:
+            raise HTTPException(status_code=403, detail='Вы не можете удалить чужой товар')
+        
+        # 2 Удаляем через репозиторий
+        await self.repo.delete(product_id)
+
+        # 3 Уведомление и очистка кеша
+        if self.background_tasks and self.manager:
+            self.background_tasks.add_task(self.manager.broadcast, f"Продукт ID {product_id} удален")
+        await self._clear_cache(username)
+
+
+    async def update_product(self, username: str, product_id: UUID, name: str | None, price: float | None):
+        # 1 Проверка прав 
+        product = await self.repo.get_by_id(product_id)
+        if not product:
+            raise HTTPException(status_code=404, detail='Продукт не найден')
+        
+        if product['owner_username'] != username:
+            raise HTTPException(status_code=403, detail='Нельзя редактировать чужой продукт')
+        
+        # 2 Обновляю в БД через репозиторий
+        updated_product = await self.repo.update(product_id, name, price)
+
+        # 3 Уведомление и очистка кеша
+        if self.background_tasks and self.manager:
+            self.background_tasks.add_task(
+                self.manager.broadcast,
+                    f"Продукт {json.dumps(jsonable_encoder(updated_product))} был обновлен"
+            )
+        await self._clear_cache(username)
+
+        return updated_product 
