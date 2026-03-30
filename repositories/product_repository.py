@@ -29,7 +29,7 @@ class ProductRepository:
     async def get_by_id(self, product_id: UUID):
         async with self.pool.acquire() as conn:
             record = await conn.fetchrow(
-                "SELECT id, name, price, owner_username FROM products WHERE id = $1",
+                "SELECT * FROM products WHERE id = $1",
                 product_id
             )
             return dict(record) if record else None

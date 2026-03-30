@@ -5,7 +5,7 @@ from fastapi import Request, Depends, BackgroundTasks
 from config import settings
 from repositories.product_repository import ProductRepository
 from services.product_service import ProductService
-from websocket import manager
+
 
 
 # Эта функция будет вызываться один раз при старте приложения
@@ -84,6 +84,8 @@ async def get_product_service(
     '''
     Эта функция собирает наш Сервис как конструктор и выдаёт его роутеру
     '''
+    from websocket import manager
+
     # 1 Достаем Redis из приложения
     redis = getattr(request.app.state, 'redis', None)
 
