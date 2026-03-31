@@ -1,6 +1,6 @@
-from typing import List, Optional
+from typing import List, Optional, Annotated
 from fastapi import APIRouter, Depends, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator, computed_field
 from uuid import UUID
 
 # Импортируем зависимости из наших центральных модулей
@@ -23,9 +23,27 @@ class Product(BaseModel):
     price: float
     owner_username: str
 
+    # Вычисляемое поле: цена с налогом (например +12% НДС)
+    @computed_field
+    @property
+    def price_with_tax(self) -> float:
+        return round(self.price * 1.12, 2)
+
+
 class ProductCreate(BaseModel):
-    name: str
-    price: float
+    # Имя не должно быть слишком длинным и не должно быть пустим
+    name: Annotated[str, Field(min_length=1, max_length=100)]
+    # Цена не может быть отрицательной
+    price: Annotated[float, Field(gt=0, description='Цена не должна быть отрицательной')]
+
+    @field_validator('name')
+    @classmethod
+    def name_must_not_be_numeric(cls, v: str) -> str:
+        if v.isnumeric():
+            raise ValueError('Название товаров не должно состоять только из цифр')
+        return v
+    
+
 
 class ProductUpdate(BaseModel):
     name: Optional[str] = None

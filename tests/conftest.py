@@ -103,12 +103,13 @@ def db_pool(monkeypatch):
                     return None
 
             # 3. Поиск продукта перед удалением (SELECT owner_username...)
-                if "SELECT owner_username FROM products" in query:
+                if "SELECT * FROM products WHERE id" in query:
                     product_id = str(args[0])
                     # Ищем продукт в списке
                     for p in fake_products_db:
                         if str(p['id']) == product_id:
-                            return {"owner_username": p["owner_username"]}
+                            # Возвращаем весь продукт, так как сервис ожидает dict(record)
+                            return p
                     return None
                 
                 # 2. Удаление продукта

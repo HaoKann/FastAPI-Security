@@ -170,19 +170,22 @@ async function uploadAvatar() {
 
 }
 
+// --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ДЛЯ ПАГИНАЦИИ ---
+let currentOffset = 0
+const LIMIT = 2 // Выводим по 2 товара на страницу для наглядности
+
 // --- 4. Функция получения товаров с токеном---
 async function getProducts() {
     const token = localStorage.getItem('accessToken') // <-- 1. Достаем токен
     const responseArea = document.getElementById('response-area')
 
     try {
-        const response = await fetch(`${API_URL}/products/`, {  // <-- 2. Добавляем настройки запроса
+        const response = await fetch(`${API_URL}/products/?limit=${LIMIT}&offset=${currentOffset}`, {
             method: 'GET',
             headers: {
-                // <-- 3. Предъявляем пропуск (токен)
                 'Authorization': `Bearer ${token}`
             }
-        }) 
+        })
 
         // Если сервер упал (например, 500 ошибка), ловим текст ошибки, чтобы не было "Unexpected token I"
         if (!response.ok) {
@@ -199,14 +202,21 @@ async function getProducts() {
             <div style="display: flex; flex-wrap: wrap; gap: 15px;">
         `;
         
-        if (products.length === 0) {
+        if (products.length === 0 && currentOffset === 0) {
             html += `<p style="color: #718096; width: 100%;">У вас пока нет ни одного товара.</p>`;
+        } else if (products.length === 0) {
+            html += `<p style="color: #718096; width: 100%;">Больше товаров нет.</p>`;
         } else {
             products.forEach(p => {
                 html += `
                 <div style="background: white; border: 2px solid #edf2f7; border-radius: 12px; padding: 20px; width: 220px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); transition: transform 0.2s; display: flex; flex-direction: column;">
                     <h4 style="margin-bottom: 10px; color: #2d3748; font-size: 1.2em;">${p.name}</h4>
-                    <p style="color: #48bb78; font-weight: 800; font-size: 1.4em; margin-bottom: 10px;">$${p.price}</p>
+                    <p style="color: #48bb78; font-weight: 800; font-size: 1.4em; margin-bottom: 5px;">$${p.price}</p>
+                    
+                    <p style="color: #ed8936; font-size: 0.85em; margin-bottom: 10px; font-weight: bold;">
+                        С налогом: $${p.price_with_tax}
+                    </p>
+
                     <div style="margin-bottom: 15px;">
                         <span style="background: #edf2f7; color: #4a5568; padding: 4px 8px; border-radius: 6px; font-size: 0.8em;">ID: ${p.id.substring(0,6)}...</span>
                     </div>
@@ -219,12 +229,55 @@ async function getProducts() {
             });
         }
         html += `</div>`;
+
+        // Кнопки пагинации
+        const currentPage = (currentOffset / LIMIT) + 1
+        const isLastPage = products.length < LIMIT // Если пришло меньше 2 товаров, значит это конец
         
-        // Вставляем карточки прямо в наш блок ответа
+        html += `
+        <div style="margin-top: 25px; display: flex; gap: 15px; align-items: center; justify-content: center; width: 100%; max-width: 450px;">
+            <button onclick="prevPage()" ${currentOffset === 0 ? 'disabled' : ''} 
+                    style="padding: 10px 20px; border-radius: 8px; border: none; font-weight: bold; transition: 0.2s;
+                           background: ${currentOffset === 0 ? '#e2e8f0' : '#667eea'}; 
+                           color: ${currentOffset === 0 ? '#a0aec0' : 'white'}; 
+                           cursor: ${currentOffset === 0 ? 'not-allowed' : 'pointer'};">
+                ⬅️ Назад
+            </button>
+
+            <span style="color: #4a5568; font-weight: bold; font-size: 1.1em;">
+                Страница ${currentPage}
+            </span>
+
+            <button onclick="nextPage(${isLastPage})" ${isLastPage ? 'disabled' : ''} 
+                    style="padding: 10px 20px; border-radius: 8px; border: none; font-weight: bold; transition: 0.2s;
+                           background: ${isLastPage ? '#e2e8f0' : '#667eea'}; 
+                           color: ${isLastPage ? '#a0aec0' : 'white'}; 
+                           cursor: ${isLastPage ? 'not-allowed' : 'pointer'};">
+                Вперед ➡️
+            </button>
+        </div>
+        `;
+
         responseArea.innerHTML = html;
         
     } catch (error) {
         responseArea.innerText = "Ошибка: " + error
+    }
+}
+
+// --- ФУНКЦИИ УПРАВЛЕНИЯ ПАГИНАЦИЕЙ ---
+
+function prevPage() {
+    if (currentOffset >= LIMIT) {
+        currentOffset -= LIMIT; // Уменьшаем отступ
+        getProducts(); // Заново запрашиваем товары
+    }
+}
+
+function nextPage(isLastPage) {
+    if (!isLastPage) {
+        currentOffset += LIMIT; // Увеличиваем отступ
+        getProducts(); // Заново запрашиваем товары
     }
 }
 
@@ -270,7 +323,13 @@ async function createProduct() {
             getProducts()
         } else {
             const errorData = await response.json()
-            alert('Ошибка создания товара: '+ (errorData.detail || 'Неизвестная ошибка'))
+            // ПРОКАЧАННАЯ ОБРАБОТКА ОШИБОК
+            // Если detail — это массив (как у Pydantic), превращаем его в читаемый текст
+            const errorMessage = typeof errorData.detail === 'object'
+                ? JSON.stringify(errorData.detail)
+                : errorData.detail
+
+            alert('Ошибка: '+ errorMessage)
         } 
 
     } catch (error){
