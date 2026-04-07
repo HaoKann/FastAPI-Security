@@ -34,7 +34,7 @@ class ProductService:
                 if cached_data:
                     print(f"✅ CACHE HIT: Товары для пользователя {username} из Redis")
                     return json.loads(cached_data)
-            except Exception as e:
+            except Exception:
                 pass # Игнорируем ошибку чтения и идем в БД
 
 

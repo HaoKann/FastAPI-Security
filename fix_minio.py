@@ -28,7 +28,7 @@ async def make_public():
             # Проверяем, есть ли бакет
             await s3.head_bucket(Bucket=bucket)
             print(f"✅ Бакет '{bucket}' найден.")
-        except:
+        except Exception:
             print(f"❌ Бакет '{bucket}' не найден или недоступен. Пробуем создать...")
             await s3.create_bucket(Bucket=bucket)
 

@@ -1,15 +1,12 @@
 # --- 1. Импортируем наши модули ---
 import os
 import time
-import json
 from redis import asyncio as aioredis
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
 from contextlib import asynccontextmanager
 
 # ВАЖНО: config должен импортироваться до модулей, которые его используют.
 # Он сам загрузит нужный .env или .env.test файл.
-from config import settings
 
 # Импортируем функции для управления жизненным циклом БД
 from database import connect_to_db, close_db_connection
@@ -31,6 +28,8 @@ from graphql_app.schema import schema # Импортируем нашу схем
 # S3
 from routers import media, users
 
+
+from websocket import router as websocket_router
 
 # --- 2. Управление жизненным циклом приложения ---
 # Это как "выключатель" для приложения, нужен для правильного включения и выключения подключения к БД
@@ -137,7 +136,7 @@ app.include_router(graphql_app, prefix='/graphql')
 # FastAPI автоматически обработает префиксы (например, /auth, /compute), которые мы задали в каждом роутере.
 
 # 1. Сначала импортируем роутеры (всегда)
-from websocket import router as websocket_router
+
 # Подключаем только необходимые роутеры для тестов
 # bg_tasks пока можно оставить под условием, если не нужно их тестировать
 if os.getenv('TESTING') != 'True':

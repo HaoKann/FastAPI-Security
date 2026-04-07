@@ -1,11 +1,8 @@
-from jose import jwt
-from datetime import datetime, timedelta, UTC
 from fastapi.testclient import TestClient
 from starlette import status
 
 # Мы берем настройки прямо из модуля авторизации.
 # Если в CI задан env var, auth.py его подхватит, и тест тоже его увидит.
-from auth import SECRET_KEY, ALGORITHM
 
 # --- Тесты для корневых эндпоинтов ---
 

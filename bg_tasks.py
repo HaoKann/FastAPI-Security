@@ -10,6 +10,8 @@ import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from auth import get_current_user
+from celery_worker import celery_app
 import os
 
 # --- 1. Импорты и настройка ---
@@ -19,8 +21,8 @@ import os
 load_dotenv()
 
 # Импортируем наш главный объект Celery
-from celery_worker import celery_app
-from auth import get_current_user
+
+
 
 
 # Получаем логгер. __name__ автоматически подставит "bg_tasks"

@@ -1,5 +1,4 @@
 import sys # <-- Добавляем импорт для системных утилит
-from dotenv import load_dotenv
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 

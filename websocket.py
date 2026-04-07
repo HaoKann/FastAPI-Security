@@ -74,7 +74,7 @@ async def websocket_notification(
                 await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason='User not found')
                 return
             
-        except JWTError as e:
+        except JWTError:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason='Invalid or expired token')
             return
         
@@ -91,12 +91,14 @@ async def websocket_notification(
             manager.disconnect(websocket)
             await manager.broadcast(f'Клиент {username} отключился')
 
-    except Exception as e:
+    except Exception:
         import traceback
         traceback.print_exc() # Печатаем полный след ошибки
         # Пытаемся закрыть, если еще не закрыто
-        try: await websocket.close()
-        except: pass
+        try: 
+            await websocket.close()
+        except Exception: 
+            pass
 
 
 @router.websocket('/ws/chat')

@@ -24,7 +24,7 @@ async def make_bucket_public():
         try:
             await s3.head_bucket(Bucket=bucket_name)
             print(f"Бакет '{bucket_name}' найден.")
-        except:
+        except Exception:
             print(f"Бакет '{bucket_name}' не найден. Создаем...")
             await s3.create_bucket(Bucket=bucket_name)
 

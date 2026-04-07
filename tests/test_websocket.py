@@ -1,5 +1,4 @@
 from fastapi.testclient import TestClient
-from starlette import status
 from auth import create_tokens
 
 # --- Тест 1: Успешное подключение к WebSocket ---
