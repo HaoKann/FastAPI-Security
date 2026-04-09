@@ -12,7 +12,7 @@ async def update_avatar(
     pool = Depends(get_pool) #  Подключаемся к базе
 ):
     # 1. Проверяем формат файла (только картинки)
-    if not file.content_type.startswith('image/'):
+    if not file.content_type or not file.content_type.startswith('image/'):
         raise HTTPException(status_code=400, detail="File must be an image")
     
     # 2. Загружаем файл в MinIO и получаем ссылку

@@ -9,7 +9,7 @@ router = APIRouter(
 @router.post('/upload')
 async def upload_file(file: UploadFile = File(...)):
     # 1. Проверка: только картинки
-    if not file.content_type.startswith("image/"):
+    if not file.content_type or not file.content_type.startswith("image/"):
         # Выбрасываем ошибку 400 (Bad Request)
         return HTTPException(status_code=400, detail='File must be an image')
     

@@ -24,7 +24,7 @@ class Product(BaseModel):
     owner_username: str
 
     # Вычисляемое поле: цена с налогом (например +12% НДС)
-    @computed_field
+    @computed_field # type: ignore
     @property
     def price_with_tax(self) -> float:
         return round(self.price * 1.12, 2)

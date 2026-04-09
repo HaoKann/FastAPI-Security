@@ -22,12 +22,15 @@ class S3Service:
         self.bucket = settings.S3_BUCKET_NAME
         self.session = aioboto3.Session()
 
-    async def upload_file(self, file: UploadFile) -> str:
+    async def upload_file(self, file: UploadFile) -> str | None:
         """
         Загружает файл в хранилище и возвращает публичную ссылку.
         """
         # 1. Генерируем уникальное имя файла
         # split(".")[-1] берет расширение (например, "png" или "jpg")
+        if not file.filename:
+            return None # Если имени нет, прерываем функцию и возвращаем пустоту
+        
         file_extension = file.filename.split(".")[-1]
         unique_filename = f"{uuid.uuid4()}.{file_extension}"
 
@@ -49,7 +52,7 @@ class S3Service:
             print(f"❌ S3 Upload Error: {e}")    
             raise HTTPException(status_code=500, detail="Failed to upload file")
 
-    async def get_presigned_url(self, object_name: str, expires_in: int = 3600) -> str:
+    async def get_presigned_url(self, object_name: str, expires_in: int = 3600) -> str | None:
         """
         Генерирует временную ссылку (пропуск) на просмотр приватного файла.
         expires_in = 3600 (ссылка работает 1 час).

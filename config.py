@@ -63,4 +63,4 @@ class Settings(BaseSettings):
         return url
     
 # Создаем экземпляр настроек, который будем импортировать
-settings = Settings()
+settings = Settings() # type: ignore
