@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     S3_ENDPOINT_URL: str
     S3_BUCKET_NAME: str
 
+
+    SENTRY_DSN: str | None = None
+
     # Логика загрузки .env файла
     model_config = SettingsConfigDict(
         # Умный выбор файла:

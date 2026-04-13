@@ -4,6 +4,8 @@ import time
 from redis import asyncio as aioredis
 from fastapi import FastAPI, Request
 from contextlib import asynccontextmanager
+import sentry_sdk
+from config import settings
 
 # ВАЖНО: config должен импортироваться до модулей, которые его используют.
 # Он сам загрузит нужный .env или .env.test файл.
@@ -90,6 +92,16 @@ async def lifespan(app: FastAPI):
         await app.state.redis.close()
 
 
+# --- ИНИЦИАЛИЗАЦИЯ SENTRY ---
+# Запускаем Sentry до создания самого приложения FastAPI
+if settings.SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        traces_sample_rate=1.0,
+        profiles_sample_rate=1.0
+    )
+    print("✅ Sentry is tracking errors!")
+
 # --- 3. Создаем и настраиваем приложение ---
 # Создаем главный экземпляр FastAPI и передаем ему наш lifespan
 app = FastAPI(
@@ -156,3 +168,4 @@ app.include_router(users.router)
 @app.get('/')
 async def root():
     return FileResponse('static/index.html')
+
