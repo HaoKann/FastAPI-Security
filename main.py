@@ -2,7 +2,7 @@
 import os
 import time
 from redis import asyncio as aioredis
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from contextlib import asynccontextmanager
 import sentry_sdk
 from config import settings
@@ -30,8 +30,12 @@ from graphql_app.schema import schema # Импортируем нашу схем
 # S3
 from routers import media, users
 
-
 from websocket import router as websocket_router
+
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi_limiter import FastAPILimiter
+from fastapi_limiter.depends import RateLimiter
+
 
 # --- 2. Управление жизненным циклом приложения ---
 # Это как "выключатель" для приложения, нужен для правильного включения и выключения подключения к БД
@@ -63,6 +67,11 @@ async def lifespan(app: FastAPI):
             # decode_responses=True — чтобы получать строки, а не байты
             redis = aioredis.from_url('redis://fastapi_redis:6379', encoding='utf8', decode_responses=True)
             app.state.redis = redis
+
+            # Инициализируем защиту от спама
+            await FastAPILimiter.init(redis)
+            print("✅ Rate Limiter initialized")
+
             print("✅ Redis connected successfully")
         except Exception as e:
             print(f"❌ Failed to connect to Redis: {e}")
@@ -110,6 +119,25 @@ app = FastAPI(
     version='2.0.0',
     lifespan=lifespan 
 )
+
+# Разрешенные источники (домены фронтенда)
+origins = [
+    "http://localhost",
+    "http://localhost:3000",
+    "http://localhost:8001",
+    "http://127.0.0.1:8000",
+]
+
+
+app.add_middleware(
+    CORSMiddleware,
+    # allow_origins=origins # Для продакшена нужно раскомментировать эту строку!
+    allow_origins=["*"], # Для локальных тестов пока разрешаем всем ("*")
+    allow_credentials=True,
+    allow_methods=["*"], # Разрешаем все методы (GET, POST, PUT, DELETE)
+    allow_headers=["*"], # Разрешаем все заголовки
+)
+
 
 @app.middleware('http')
 async def add_process_time_header(request: Request, call_next):
@@ -165,7 +193,8 @@ app.include_router(users.router)
 
 # --- 5. Корневой эндпоинт (опционально) ---
 # Изменяем главный маршрут: теперь он отдает HTML-файл, а не редирект
-@app.get('/')
+# Ограничиваем: максимум 2 запроса в 5 секунд
+@app.get('/', dependencies=[Depends(RateLimiter(times=2, seconds=5))])
 async def root():
     return FileResponse('static/index.html')
 
