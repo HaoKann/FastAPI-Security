@@ -4,7 +4,6 @@ import time
 from redis import asyncio as aioredis
 from fastapi import FastAPI, Request, Depends
 from contextlib import asynccontextmanager
-import sentry_sdk
 from config import settings
 
 # ВАЖНО: config должен импортироваться до модулей, которые его используют.
@@ -32,9 +31,36 @@ from routers import media, users
 
 from websocket import router as websocket_router
 
+# Safety
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_limiter import FastAPILimiter
 from fastapi_limiter.depends import RateLimiter
+
+
+# Observability 
+import sentry_sdk
+from prometheus_fastapi_instrumentator import Instrumentator
+
+
+# Logging
+# import logging
+# from pythonjsonlogger import jsonlogger
+
+# # Настраиваем формат логов
+# logHandler = logging.StreamHandler()
+# formatter = jsonlogger.JsonFormatter(
+#     '%(timestamp)s %(level)s %(name)s %(message)s',
+#     timestamp = True
+# )
+# logHandler.setFormatter(formatter)
+
+# # Применяем настройки к основному логгеру
+# logger = logging.getLogger()
+# logger.addHandler(logHandler)
+# logger.setLevel(logging.INFO)
+
+# # Убираем стандартные обработчики, чтобы не было дублей
+# logger.propagate = False
 
 
 # --- 2. Управление жизненным циклом приложения ---
@@ -119,6 +145,9 @@ app = FastAPI(
     version='2.0.0',
     lifespan=lifespan 
 )
+
+# Инициализация мониторинга (Prometheus)
+Instrumentator().instrument(app).expose(app)
 
 # Разрешенные источники (домены фронтенда)
 origins = [
