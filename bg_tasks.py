@@ -81,7 +81,7 @@ def compute_factorial_task(self, username: str, n: int):
             try:
                 await conn.execute(
                         'INSERT INTO calculations (username, task, result) VALUES ($1, $2, $3)',
-                        username, f"factorial of {n}", result
+                        username, f"factorial of {n}", str(result)
                     )
             finally:
                 await conn.close()

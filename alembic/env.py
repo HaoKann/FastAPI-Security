@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
+from models import Base
 # ----------------------------------------------------------------------
 # 👇 1. Добавляем путь к корню проекта, чтобы Python увидел 'config.py'
 sys.path.append(os.path.join(sys.path[0], '..'))
@@ -36,7 +37,7 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-target_metadata = None
+target_metadata = Base.metadata
 
 # ... остальные настройки ...
 

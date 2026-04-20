@@ -28,3 +28,13 @@ class Product(Base):
 
     # Связь с юзером (внешний ключ)
     owner_username = Column(String, ForeignKey('users.username'), nullable=False)
+
+
+# --- Модель таблицы Calculations (для фоновых задач) ---
+class Calculation(Base):
+    __tablename__ = 'calculations'
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, ForeignKey('users.username'), nullable=False)
+    task = Column(String, nullable=False)   
+    result = Column(String, nullable=False)
