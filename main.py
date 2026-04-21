@@ -42,6 +42,10 @@ import sentry_sdk
 from prometheus_fastapi_instrumentator import Instrumentator
 
 
+import json
+import asyncio
+from websocket import manager
+
 # Logging
 # import logging
 # from pythonjsonlogger import jsonlogger
@@ -63,6 +67,28 @@ from prometheus_fastapi_instrumentator import Instrumentator
 # logger.propagate = False
 
 
+async def listen_to_redis():
+    """Фоновая задача FastAPI для прослушивания канала Redis"""
+    try:
+        redis_url = os.getenv('REDIS_URL', 'redis://redis:6379/0')
+        redis_client = await aioredis.from_url(redis_url)
+
+        pubsub = redis_client.pubsub()
+        await pubsub.subscribe('celery_notifications')
+
+        print("🎧 FastAPI начал слушать канал celery_notifications...")
+
+        async for message in pubsub.listen():
+            if message['type'] == 'message':
+                data = json.loads(message['data'])
+                target_username = data.get('username')
+                text = data.get('message')
+
+                print(f"📩 Получено из Redis для {target_username}: {text}")
+                await manager.send_personal_message(text, target_username)
+    except Exception as e:
+        print(f"❌ Ошибка прослушивания Redis: {e}")
+
 # --- 2. Управление жизненным циклом приложения ---
 # Это как "выключатель" для приложения, нужен для правильного включения и выключения подключения к БД
 # # ИСПРАВЛЕНО: Используем новый, рекомендуемый способ управления жизненным циклом - lifespan.
@@ -72,6 +98,9 @@ async def lifespan(app: FastAPI):
     Контекстный менеджер для управления событиями "startup" и "shutdown".
     Это современный и надежный способ управлять ресурсами, такими как пул соединений с БД.
     """
+
+    # Запускаем прослушиватель Redis в фоне
+    asyncio.create_task(listen_to_redis())
 
     # Инициализируем переменные, чтобы они существовали в любом случае
     app.state.pool = None

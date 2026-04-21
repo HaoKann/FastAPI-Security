@@ -18,29 +18,44 @@ router = APIRouter(
 class ConnectionManager:  
     # Инициализирует объект класса при его создании.
     def __init__(self):
-        self.active_connections: list[WebSocket] = [] # Создаёт пустой список для хранения всех активных WebSocket-соединений. 
+        # ИЗМЕНЕНИЕ: Теперь храним словарь: { "username": [соединения] }
+        self.active_connections: dict[str, list[WebSocket]] = {} # Создаёт пустой список для хранения всех активных WebSocket-соединений. 
         # Тип list[WebSocket] указывает, что список содержит объекты типа WebSocket.
 
     # connect: Принимает соединение, добавляет его в список
     # Асинхронный метод для подключения нового клиента
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket: WebSocket, username: str):
         # Принимает входящее WebSocket-соединение, устанавливая "рукопожатие" между клиентом и сервером.
         await websocket.accept()
+        if username not in self.active_connections:
+            self.active_connections[username] = []
         # Добавляет новое соединение в список активных
-        self.active_connections.append(websocket)
+        self.active_connections[username].append(websocket)
 
     # disconnect: Удаляет соединение при разрыве.
-    def disconnect(self, websocket: WebSocket):
-        # Проверяет, есть ли соединение в списке, чтобы избежать ошибки при удалении.
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
+    def disconnect(self, websocket: WebSocket, username: str):
+        if username in self.active_connections:
+            if websocket in self.active_connections[username]:
+                self.active_connections[username].remove(websocket)
+            if not self.active_connections[username]:
+                del self.active_connections[username]
+           
 
     # broadcast: Асинхронный метод для отправки сообщения всем подключённым клиентам.
     async def broadcast(self, message: str):
-        # Проходит по всем активным соединениям.
-        for connection in self.active_connections:
-            # Отправляет текстовое сообщение каждому клиенту асинхронно.
-            await connection.send_text(message)
+        # Проходим по всем значениям словаря (то есть по всем спискам соединений)
+        for connections_list in self.active_connections.values():
+            for connection in connections_list:
+                # Отправляет текстовое сообщение каждому клиенту асинхронно.
+                await connection.send_text(message)
+
+
+    # НОВЫЙ МЕТОД: Отправка лично юзеру
+    async def send_personal_message(self, message: str, username: str):
+        if username in self.active_connections:
+            for connection in self.active_connections[username]:
+                await connection.send_text(message)
+
 
 # ConnectionManager управляет подключениями и рассылает сообщения
 manager = ConnectionManager()
@@ -79,7 +94,7 @@ async def websocket_notification(
             return
         
         # Шаг 3: Если все проверки пройдены, подключаем клиента
-        await manager.connect(websocket)
+        await manager.connect(websocket, username)
         await manager.broadcast(f'Клиент {username} подключился к уведомлениям')
         try:
             # Бесконечный цикл для поддержания соединения
@@ -88,7 +103,7 @@ async def websocket_notification(
                 # Мы не ожидаем сообщений от клиента на этом эндпоинте.
                 await websocket.receive_text()
         except WebSocketDisconnect:
-            manager.disconnect(websocket)
+            manager.disconnect(websocket, username)
             await manager.broadcast(f'Клиент {username} отключился')
 
     except Exception:
@@ -128,7 +143,7 @@ async def websocket_chat(
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
     
-    await manager.connect(websocket)
+    await manager.connect(websocket, username)
     await manager.broadcast(f'Клиент {username} подключился к чату')
     try:
         # Бесконечный цикл для обмена сообщениями
@@ -136,7 +151,7 @@ async def websocket_chat(
             data = await websocket.receive_text()
             await manager.broadcast(f'{username}: {data}')
     except WebSocketDisconnect:
-        await manager.disconnect(websocket)
+        await manager.disconnect(websocket, username)
         await manager.broadcast(f'Клиент {username} покинул чат') 
 
 
@@ -176,7 +191,7 @@ async def websocket_products(websocket: WebSocket, token: str = Query(...), pool
 
     # Если все проверки пройдены, подключаем пользователя
     # Подключает клиента через manager
-    await manager.connect(websocket)
+    await manager.connect(websocket, username)
     # Уведомляет всех подключённых клиентов о новом пользователе.
     await manager.broadcast(f"Клиент '{username}' присоединился к чату.")
     # Начинает блок для обработки сообщений, где может произойти разрыв соединения.
@@ -190,6 +205,6 @@ async def websocket_products(websocket: WebSocket, token: str = Query(...), pool
     # Ловит событие разрыва соединения.
     except WebSocketDisconnect:
         # Удаляет клиента из списка активных соединений.
-        manager.disconnect(websocket)
+        manager.disconnect(websocket, username)
         await manager.broadcast(f"Клиент '{username}' покинул чат.")
 

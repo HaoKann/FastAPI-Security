@@ -14,6 +14,9 @@ from auth import get_current_user
 from celery_worker import celery_app
 import os
 
+import redis.asyncio as aioredis
+import json
+
 # --- 1. Импорты и настройка ---
 
 # ИСПРАВЛЕНО: Загружаем переменные окружения прямо здесь
@@ -87,6 +90,20 @@ def compute_factorial_task(self, username: str, n: int):
                 await conn.close()
 
             logger.info(f'[CELERY] Успешно вычислен факториал {n} = {result}')
+
+            # --- НОВЫЙ БЛОК: ОТПРАВЛЯЕМ СИГНАЛ В REDIS ---
+            try:
+                redis_client = await aioredis.from_url(os.getenv('REDIS_URL', 'redis://redis:6379/0'))
+                message = {
+                    "username": username,
+                    "message": f"Факториал числа {n} успешно вычислен! Результат: {result}"
+                }
+                # Публикуем сообщение в канал "celery_notifications"
+                await redis_client.publish("celery_notifications", json.dumps(message))
+                await redis_client.aclose()
+            except Exception as redis_err:
+                logger.error(f'[CELERY] Ошибка отправки в Redis: {redis_err}')
+
             return result
     
         except Exception as e:
