@@ -54,7 +54,7 @@ def db_pool(monkeypatch):
     existing_users.clear()  # очищаем перед каждым тестом
     fake_products_db.clear()
     fake_product_id_counter = 1
-    manager.active_connections = []
+    manager.active_connections = {}
 
     # --- ОПРЕДЕЛЕНИЕ ФЕЙКОВЫХ ФУНКЦИЙ ---
 

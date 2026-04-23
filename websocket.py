@@ -1,10 +1,9 @@
 # WebSocket, WebSocketDisconnect — добавляет поддержку WebSocket-протокола и обработку разрыва соединения.
-from fastapi import WebSocket, WebSocketDisconnect, APIRouter, Depends, Query, status
+from fastapi import WebSocket, WebSocketDisconnect, APIRouter, Query, status
 from typing import Optional
 import asyncpg
 from jose import jwt, JWTError
 from auth import SECRET_KEY, ALGORITHM, get_user_from_db
-from database import get_pool
 
 # Создаем APIRouter. Все эндпоинты в этом файле будут привязаны к нему.
 router = APIRouter(
@@ -68,10 +67,12 @@ manager = ConnectionManager()
 @router.websocket('/ws/notifications')
 async def websocket_notification(
     websocket: WebSocket,
-    token: str = Query(...),
-    pool: asyncpg.Pool = Depends(get_pool)
+    token: str = Query(...)
 ):
     try:
+        # Достаем пул напрямую из состояния приложения
+        pool: asyncpg.Pool = websocket.app.state.pool
+
         username: Optional[str] = None
 
         try:
@@ -151,7 +152,7 @@ async def websocket_chat(
             data = await websocket.receive_text()
             await manager.broadcast(f'{username}: {data}')
     except WebSocketDisconnect:
-        await manager.disconnect(websocket, username)
+        manager.disconnect(websocket, username)
         await manager.broadcast(f'Клиент {username} покинул чат') 
 
 
@@ -163,10 +164,12 @@ async def websocket_chat(
 @router.websocket("/ws/products")
 # websocket: WebSocket — объект соединения
 # token: str = Query(...) — токен авторизации, переданный как параметр запроса (обязательный, так как ... указывает на это).
-async def websocket_products(websocket: WebSocket, token: str = Query(...), pool: asyncpg.Pool = Depends(get_pool) ):
+async def websocket_products(websocket: WebSocket, token: str = Query(...) ):
     # Объявляет переменную username, которая может быть None (опциональный тип), для хранения имени пользователя
     username: Optional[str] = None
     try:
+        pool: asyncpg.Pool = websocket.app.state.pool
+
         # Шаг 1: Декодируем токен
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         

@@ -2,7 +2,7 @@
 import os
 import time
 from redis import asyncio as aioredis
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request
 from contextlib import asynccontextmanager
 from config import settings
 
@@ -34,7 +34,6 @@ from websocket import router as websocket_router
 # Safety
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_limiter import FastAPILimiter
-from fastapi_limiter.depends import RateLimiter
 
 
 # Observability 
@@ -99,8 +98,10 @@ async def lifespan(app: FastAPI):
     Это современный и надежный способ управлять ресурсами, такими как пул соединений с БД.
     """
 
-    # Запускаем прослушиватель Redis в фоне
-    asyncio.create_task(listen_to_redis())
+    # ИСПРАВЛЕНО: Сохраняем жесткую ссылку на задачу, чтобы Питон ее не убил!
+    # Запускаем и "якорим" слушателя ТОЛЬКО для реальной работы, отключаем для тестов
+    if os.getenv('TESTING') != 'True':
+        app.state.redis_task = asyncio.create_task(listen_to_redis())
 
     # Инициализируем переменные, чтобы они существовали в любом случае
     app.state.pool = None
@@ -251,8 +252,7 @@ app.include_router(users.router)
 
 # --- 5. Корневой эндпоинт (опционально) ---
 # Изменяем главный маршрут: теперь он отдает HTML-файл, а не редирект
-# Ограничиваем: максимум 2 запроса в 5 секунд
-@app.get('/', dependencies=[Depends(RateLimiter(times=2, seconds=5))])
+@app.get('/')
 async def root():
     return FileResponse('static/index.html')
 
