@@ -404,6 +404,9 @@ function showDashboard(token) {
 
     // Автоматически запрашиваем профиль, чтобы сразу показать аватарку
     getMe()
+
+    // НОВОЕ: Автоматически подключаем WebSockets
+    connectWebSocket(token)
 }
 
 function logout() {
@@ -416,5 +419,99 @@ window.onload = function() {
     const token = localStorage.getItem('accessToken')
     if (token) {
         showDashboard(token)
+    }
+}
+
+
+// ==========================================
+// 🚀 WEBSOCKETS И ФОНОВЫЕ ЗАДАЧИ (CELERY)
+// ==========================================
+
+let ws = null
+
+
+// Функция для добавления логов в черное окошко
+function addNotification(message) {
+    const notifArea = document.getElementById('notifications-area')
+    const time = new Date().toLocaleTimeString()
+    notifArea.innerHTML += `<div style="margin-bottom: 5px;">[${time}] ${message}</div>`
+    notifArea.scrollTop = notifArea.scrollHeight
+}
+
+
+// Подключаемся к вебсокету
+function connectWebSocket(token) {
+    // Закрываем старое соединение, если оно вдруг есть
+    if (ws) {
+            ws.close()
+        }
+    
+
+    // для WebSockets используется протокол ws:// вместо http://
+    // Так как бэкенд и фронт на одном хосте, берем адрес из window.location.host
+    const wsUrl = `ws://${window.location.host}/ws/notifications?token=${token}`
+
+    ws = new WebSocket(wsUrl)
+
+    const indicator = document.getElementById('ws-indicator')
+    const statusText = document.getElementById('ws-status-text')
+
+    ws.onopen = function() {
+        indicator.style.background = '#48bb78'
+        statusText.innerText = 'WebSockets: Подключено'
+        statusText.style.color = '#48bb78'
+        addNotification('🟢 Соединение с сервером установлено. Ждем уведомлений...')
+    }
+
+    ws.onmessage = function(event) {
+        // Когда сервер присылает сообщение, выводим его
+        addNotification(`🔔 ${event.data}`)
+    }
+
+    ws.onclose = function() {
+        indicator.style.background = 'rgb(251,8,8)'
+        statusText.innerText = 'WebSocket: Отключено'
+        statusText.style.color =  'rgb(251,8,8)'
+        addNotification('🔴 Соединение разорвано.')
+    }
+
+    ws.onerror = function(error) {
+        addNotification('❌ Ошибка WebSocket.')
+    }
+
+
+// Отправляем задачу в Celery
+async function startFactorialTask() {
+    const token = localStorage.getItem('accessToken')
+    const inputElement = document.getElementById('factorial-input')
+    const number = parseInt(inputElement.value)
+
+    if (!number || number <= 0) {
+        alert('Пожалуйста, введите положительное число.')
+        return
+    }
+
+    addNotification(`⏳ Отправляем задачу: факториал числа ${number}...`)
+
+    try {
+        const response = await fetch(`${API_URL}/compute/factorial`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ n: number })
+        })
+
+        if (response.status == 202) {
+            addNotification('✅ Задача принята сервером. Воркер Celery начал вычисления.')
+            inputElement.value = ''
+        } else {
+            const data = await response.json()
+            addNotification(`❌ Ошибка отправки: ${data.detail || response.status}`)
+        }
+    } catch (error) {
+            addNotification(`❌ Ошибка сети: ${error}`)
+        }
     }
 }

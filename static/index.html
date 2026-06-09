@@ -311,7 +311,34 @@
                 <button onclick="createProduct()" style="white-space: nowrap;">Добавить</button>
             </div>
             
+        </div>
+
+
+        <hr>
+
+            <h4><span class="emoji">⚙️</span> Фоновые задачи (Celery)</h4>
+            
+            <div id="ws-status" style="margin-bottom: 15px; font-weight: bold; color: #718096; font-size: 0.9em; display: flex; align-items: center; gap: 8px;">
+                <div id="ws-indicator" style="width: 10px; height: 10px; border-radius: 50%; background: #fc8181;"></div>
+                <span id="ws-status-text">WebSockets: Отключено</span>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+                <input type="number" id="factorial-input" placeholder="Введите число (например, 7)" style="margin-bottom: 0; flex: 1;">
+                <button onclick="startFactorialTask()" style="white-space: nowrap; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                    Посчитать факториал
+                </button>
+            </div>
+
+            <div style="background: #1a202c; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+                <h5 style="color: #a0aec0; margin-bottom: 10px; font-size: 0.85em; text-transform: uppercase; letter-spacing: 1px;">Live Уведомления</h5>
+                <div id="notifications-area" style="color: #48bb78; font-family: monospace; font-size: 13px; height: 120px; overflow-y: auto;">
+                    </div>
+            </div>
+
             <button onclick="logout()" class="logout" style="width: 100%;">Выйти из системы</button>
+
+            <hr>
         </div>
 
         <div class="box">
@@ -319,6 +346,11 @@
             <pre id="response-area">Здесь будет отображаться ответ от API...</pre>
         </div>
     </div>
+
+
+
+
+
 
     <script src="/static/script.js?v=4"></script>
 </body>
