@@ -9,7 +9,7 @@ import os
 from starlette import status
 from websocket import manager
 from httpx import AsyncClient, ASGITransport
-import uuid
+
 
 # --- 1. Настройка тестового окружения ---
 
@@ -87,7 +87,7 @@ def db_pool(monkeypatch):
                 
                 # 1. Создание продукта
                 if "INSERT INTO products" in query:
-                    new_id = str(uuid.uuid4()) # <-- Генерируем настоящий UUID
+                    new_id = len(fake_products_db) + 1 # <-- Генерируем настоящий UUID
                     new_product = {
                         "id": new_id, "name": args[0],
                         "price": args[1], "owner_username": args[2]

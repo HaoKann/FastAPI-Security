@@ -1,5 +1,4 @@
 import asyncpg
-from uuid import UUID
 
 class ProductRepository:
     """
@@ -26,7 +25,7 @@ class ProductRepository:
             return dict(record) if record else None
         
     
-    async def get_by_id(self, product_id: UUID):
+    async def get_by_id(self, product_id: int):
         async with self.pool.acquire() as conn:
             record = await conn.fetchrow(
                 "SELECT * FROM products WHERE id = $1",
@@ -34,11 +33,11 @@ class ProductRepository:
             )
             return dict(record) if record else None
         
-    async def delete(self, product_id: UUID):
+    async def delete(self, product_id: int):
         async with self.pool.acquire() as conn:
             await conn.execute("DELETE FROM products WHERE id = $1", product_id)
 
-    async def update(self, product_id: UUID, name: str | None, price: float | None):
+    async def update(self, product_id: int, name: str | None, price: float | None):
         async with self.pool.acquire() as conn:
             record = await conn.fetchrow(
                 '''

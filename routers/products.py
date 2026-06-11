@@ -1,7 +1,7 @@
 from typing import List, Optional, Annotated
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field, field_validator, computed_field
-from uuid import UUID
+
 
 # Импортируем зависимости из наших центральных модулей
 from auth import get_current_user
@@ -18,7 +18,7 @@ router = APIRouter(
 
 # Модели Pydantic
 class Product(BaseModel):
-    id: UUID
+    id: int
     name: str
     price: float
     owner_username: str
@@ -83,7 +83,7 @@ async def create_product(
 # Эндпоинт для удаления продукта
 @router.delete('/{product_id}', status_code=status.HTTP_204_NO_CONTENT)
 async def delete_product(
-    product_id: UUID,
+    product_id: int,
     current_user: dict = Depends(get_current_user),
     service: ProductService = Depends(get_product_service)
 ):
@@ -97,7 +97,7 @@ async def delete_product(
 # Эндпоинт для обновления продукта
 @router.put('/{product_id}', response_model=Product)
 async def update_product(
-    product_id: UUID,
+    product_id: int,
     products_update: ProductUpdate,
     current_user: dict = Depends(get_current_user),
     service: ProductService = Depends(get_product_service)

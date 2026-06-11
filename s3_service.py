@@ -25,18 +25,49 @@ class S3Service:
     async def upload_file(self, file: UploadFile) -> str | None:
         """
         Загружает файл в хранилище и возвращает публичную ссылку.
+        Если бакета не существует, создает его.
         """
         # 1. Генерируем уникальное имя файла
-        # split(".")[-1] берет расширение (например, "png" или "jpg")
+        
         if not file.filename:
             return None # Если имени нет, прерываем функцию и возвращаем пустоту
         
+        # split(".")[-1] берет расширение (например, "png" или "jpg")
         file_extension = file.filename.split(".")[-1]
         unique_filename = f"{uuid.uuid4()}.{file_extension}"
 
         try:
             # 2. Подключаемся к MinIO
             async with self.session.client("s3", **self.config) as s3:
+                # --- НОВЫЙ БЛОК: ПРОВЕРКА И СОЗДАНИЕ БАКЕТА ---
+                try:
+                    await s3.head_bucket(Bucket=self.bucket)
+                except Exception as e:
+                    # Если получаем ошибку, скорее всего бакета нет (код 404)
+                    error_code = getattr(e, 'response', {}).get('Error', {}).get('Code', 'Unknown')
+                    if error_code == '404' or 'Not Found' in str(e):
+                        print(f"⚠️ Бакет '{self.bucket}' не найден. Создаю новый...")
+                        await s3.create_bucket(Bucket=self.bucket)
+
+                        # Делаем бакет публичным (на чтение), чтобы картинки открывались по ссылке
+                        public_policy = {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Sid": "PublicRead",
+                                    "Effect": "Allow",
+                                    "Principal": "*",
+                                    "Action": ["s3:GetObject"],
+                                    "Resource": [f"arn:aws:s3:::{self.bucket}/*"]
+                                }
+                            ]
+                        }
+                        import json
+                        await s3.put_bucket_policy(Bucket=self.bucket, Policy=json.dumps(public_policy))
+                        print(f"✅ Бакет '{self.bucket}' успешно создан и сделан публичным!")
+                    else:
+                        raise # Если ошибка не 404, прокидываем ее дальше
+
                 # 3. Загружаем файл (потоком)
                 await s3.upload_fileobj(
                     file.file,
@@ -51,6 +82,7 @@ class S3Service:
         except Exception as e:
             print(f"❌ S3 Upload Error: {e}")    
             raise HTTPException(status_code=500, detail="Failed to upload file")
+
 
     async def get_presigned_url(self, object_name: str, expires_in: int = 3600) -> str | None:
         """

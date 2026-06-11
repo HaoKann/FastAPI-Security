@@ -53,7 +53,6 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL}
       S3_BUCKET_NAME: ${S3_BUCKET_NAME}
-      
 
   # 4. Приложение FastAPI
   web:
@@ -76,13 +75,13 @@ services:
       DB_USER: postgres
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: fastapi_auth
-      
+
       REDIS_URL: redis://redis:6379 # Вместо localhost пишем "redis"
 
       SECRET_KEY: ${SECRET_KEY}
       ALGORITHM: ${ALGORITHM}
       ACCESS_TOKEN_EXPIRE_MINUTES: 30
-      REFRESH_TOKEN_EXPIRE_DAYS: 7 
+      REFRESH_TOKEN_EXPIRE_DAYS: 7
 
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
       S3_SECRET_KEY: ${S3_SECRET_KEY}
@@ -101,17 +100,7 @@ services:
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data # Чтобы файлы не пропадали при перезапуске
-    networks:
-      - default
 
-  
-  # Объявляем том для хранения данных БД
-  # Это "Именованный том" (Named Volume).
-  # Почему после двоеточия пусто? Потому что мы используем настройки по умолчанию.
 volumes:
   postgres_data:
   minio_data:
-
-
-
-      

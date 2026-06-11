@@ -12,7 +12,7 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, nullable=False)
-    password_hash = Column(String, nullable=False)
+    hashed_password = Column(String, nullable=False)
     avatar_url = Column(String, nullable=True)
 
 # --- Модель таблицы Products ---
@@ -22,7 +22,7 @@ class Product(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
-    description = Column(String, nullable=False)
+    description = Column(String, nullable=True)
     price = Column(Integer, nullable=False)
     is_active = Column(Boolean, default=True, server_default='true')
 

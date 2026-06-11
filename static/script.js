@@ -478,7 +478,7 @@ function connectWebSocket(token) {
     ws.onerror = function(error) {
         addNotification('❌ Ошибка WebSocket.')
     }
-
+}
 
 // Отправляем задачу в Celery
 async function startFactorialTask() {
@@ -514,4 +514,3 @@ async function startFactorialTask() {
             addNotification(`❌ Ошибка сети: ${error}`)
         }
     }
-}

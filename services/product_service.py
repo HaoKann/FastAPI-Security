@@ -1,6 +1,5 @@
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
-from uuid import UUID
 import json
 
 # Импортируем наш репозиторий
@@ -70,7 +69,7 @@ class ProductService:
         return new_product
     
 
-    async def delete_product(self, username: str, product_id: UUID):
+    async def delete_product(self, username: str, product_id: int):
         # 1 Сначала достаем товар для проверки права
         product = await self.repo.get_by_id(product_id)
         if product is None:
@@ -89,7 +88,7 @@ class ProductService:
         await self._clear_cache(username)
 
 
-    async def update_product(self, username: str, product_id: UUID, name: str | None, price: float | None):
+    async def update_product(self, username: str, product_id: int, name: str | None, price: float | None):
         # 1 Проверка прав 
         product = await self.repo.get_by_id(product_id)
         if not product:
