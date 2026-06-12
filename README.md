@@ -108,7 +108,7 @@ CREATE TABLE users (
 );
 
 CREATE TABLE products (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     price NUMERIC(10, 2) NOT NULL,
     owner_username VARCHAR(50) REFERENCES users(username) ON DELETE CASCADE

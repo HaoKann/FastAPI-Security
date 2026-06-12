@@ -87,7 +87,7 @@ def db_pool(monkeypatch):
                 
                 # 1. Создание продукта
                 if "INSERT INTO products" in query:
-                    new_id = len(fake_products_db) + 1 # <-- Генерируем настоящий UUID
+                    new_id = len(fake_products_db) + 1 
                     new_product = {
                         "id": new_id, "name": args[0],
                         "price": args[1], "owner_username": args[2]

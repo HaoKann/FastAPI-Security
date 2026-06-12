@@ -114,13 +114,19 @@ async function getMe() {
             // Если у юзера есть аватарка в базе, ставим её. Если нет - останется заглушка.
             if (data.avatar_url) {
                 let finalAvatarUrl = data.avatar_url
-                
+
+                // Если бэкенд отдал просто имя файла (например, "123.png"),
+                // мы сами собираем ссылку на MinIO:
+                if (!finalAvatarUrl.startsWith('http')) {
+                    finalAvatarUrl = `http://localhost:9000/test-bucket/${finalAvatarUrl}`
+                }
+
                 // Меняем докеровский адрес на локальный, чтобы браузер понял, откуда качать
-                if (finalAvatarUrl.includes('minio:9000')) {
+                else if (finalAvatarUrl.includes('minio:9000')) {
                     finalAvatarUrl = finalAvatarUrl.replace('minio:9000', 'localhost:9000')
                 }
 
-                document.getElementById('avatar-image').src = data.avatar_url
+                document.getElementById('avatar-image').src = finalAvatarUrl
             }
         }
     } catch (error) {
@@ -218,7 +224,7 @@ async function getProducts() {
                     </p>
 
                     <div style="margin-bottom: 15px;">
-                        <span style="background: #edf2f7; color: #4a5568; padding: 4px 8px; border-radius: 6px; font-size: 0.8em;">ID: ${p.id.substring(0,6)}...</span>
+                        <span style="background: #edf2f7; color: #4a5568; padding: 4px 8px; border-radius: 6px; font-size: 0.8em;">ID: ${p.id}</span>
                     </div>
                     <div style="margin-top: auto; display: flex; gap: 8px;">
                         <button onclick="editProduct('${p.id}', '${p.name}', ${p.price})" style="background: #cbd5e0; color: #2d3748; padding: 6px 10px; font-size: 0.9em; flex: 1; border-radius: 6px; border: none; cursor: pointer;">✏️ Цена</button>
