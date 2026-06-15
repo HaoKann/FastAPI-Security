@@ -33,6 +33,8 @@ class Settings(BaseSettings):
 
     SENTRY_DSN: str | None = None
 
+    STRIPE_SECRET_KEY: str
+
     # Логика загрузки .env файла
     model_config = SettingsConfigDict(
         # Умный выбор файла:
