@@ -2,26 +2,24 @@ import stripe
 import uuid
 from fastapi import HTTPException
 from config import settings
-from routers.products import Product
-from models import User
 
 
 # Инициализируем Stripe с нашим секретным ключом из config.py
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
 class PaymentService:
-    async def create_checkout_session(self, product: Product, user: User) -> str:
+    async def create_checkout_session(self, product: dict, user) -> str:
         """
         Создает сессию оплаты в Stripe и возвращает защищенный URL для редиректа.
         """
         # 1. Переводим цену в центы (Stripe принимает только целые числа в минимальных единицах валюты)
         # Например: $10.50 -> 1050 центов
-        price_in_cents = int(product.price * 100)
+        price_in_cents = int(product['price'] * 100)
 
         # 2. Генерируем Idempotency Key (защита от случайных повторных списаний)
         # Уникальный ключ: юзер + товар + случайный UUID.
         # Если юзер кликнет 5 раз подряд, Stripe создаст только одну сессию для этого ключа.
-        idem_key = f"checkout_{user.username}_prod_{product.id}_{uuid.uuid4()}"
+        idem_key = f"checkout_{user['username']}_prod_{product['id']}_{uuid.uuid4()}"
 
         try:
             # Создаем саму сессию в Stripe
@@ -31,8 +29,8 @@ class PaymentService:
                     'price_data': {
                         'currency':'usd',
                         'product_data': {
-                            'name':product.name,
-                            'description': f'Породавец: {product.owner_username}'
+                            'name':product['name'],
+                            'description': f"Поыродавец: {product['owner_username']}"
                         },
                         'unit_amount': price_in_cents,
                     },
@@ -44,8 +42,8 @@ class PaymentService:
                 # Когда оплата пройдет, Stripe пришлет нам вебхук с этими данными, 
                 # и мы поймем, кто за что заплатил.
                 metadata={
-                    "product_id": str(product.id),
-                    "username": user.username
+                    "product_id": str(product['id']),
+                    "username": user['username']
                 },
 
                 # Куда перекинуть юзера после успешной или отмененной оплаты

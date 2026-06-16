@@ -214,25 +214,29 @@ async function getProducts() {
             html += `<p style="color: #718096; width: 100%;">Больше товаров нет.</p>`;
         } else {
             products.forEach(p => {
-                html += `
-                <div style="background: white; border: 2px solid #edf2f7; border-radius: 12px; padding: 20px; width: 220px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); transition: transform 0.2s; display: flex; flex-direction: column;">
-                    <h4 style="margin-bottom: 10px; color: #2d3748; font-size: 1.2em;">${p.name}</h4>
-                    <p style="color: #48bb78; font-weight: 800; font-size: 1.4em; margin-bottom: 5px;">$${p.price}</p>
-                    
-                    <p style="color: #ed8936; font-size: 0.85em; margin-bottom: 10px; font-weight: bold;">
-                        С налогом: $${p.price_with_tax}
-                    </p>
+            html += `
+            <div style="background: white; border: 2px solid #edf2f7; border-radius: 12px; padding: 20px; width: 220px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); transition: transform 0.2s; display: flex; flex-direction: column;">
+                <h4 style="margin-bottom: 10px; color: #2d3748; font-size: 1.2em;">${p.name}</h4>
+                <p style="color: #48bb78; font-weight: 800; font-size: 1.4em; margin-bottom: 5px;">$${p.price}</p>
+                
+                <p style="color: #ed8936; font-size: 0.85em; margin-bottom: 10px; font-weight: bold;">
+                    С налогом: $${p.price_with_tax}
+                </p>
 
-                    <div style="margin-bottom: 15px;">
-                        <span style="background: #edf2f7; color: #4a5568; padding: 4px 8px; border-radius: 6px; font-size: 0.8em;">ID: ${p.id}</span>
-                    </div>
-                    <div style="margin-top: auto; display: flex; gap: 8px;">
-                        <button onclick="editProduct('${p.id}', '${p.name}', ${p.price})" style="background: #cbd5e0; color: #2d3748; padding: 6px 10px; font-size: 0.9em; flex: 1; border-radius: 6px; border: none; cursor: pointer;">✏️ Цена</button>
-                        <button onclick="deleteProduct('${p.id}')" style="background: #fc8181; color: white; padding: 6px 10px; font-size: 0.9em; flex: 1; border-radius: 6px; border: none; cursor: pointer;">🗑️ Удал.</button>
-                    </div>
+                <div style="margin-bottom: 15px;">
+                    <span style="background: #edf2f7; color: #4a5568; padding: 4px 8px; border-radius: 6px; font-size: 0.8em;">ID: ${p.id}</span>
                 </div>
-                `;
-            });
+                
+                <div style="margin-top: auto; display: flex; gap: 8px;">
+                    <button onclick="editProduct('${p.id}', '${p.name}', ${p.price})" style="background: #cbd5e0; color: #2d3748; padding: 6px 10px; font-size: 0.9em; flex: 1; border-radius: 6px; border: none; cursor: pointer;">✏️ Цена</button>
+                    <button onclick="deleteProduct('${p.id}')" style="background: #fc8181; color: white; padding: 6px 10px; font-size: 0.9em; flex: 1; border-radius: 6px; border: none; cursor: pointer;">🗑️ Удал.</button>
+                </div>
+
+                <button onclick="buyProduct('${p.id}')" style="background: #48bb78; color: white; padding: 8px; font-size: 1em; border-radius: 6px; border: none; cursor: pointer; margin-top: 8px; font-weight: bold; width: 100%;">💳 Купить товар</button>
+                
+            </div>
+            `;
+        });
         }
         html += `</div>`;
 
@@ -520,3 +524,35 @@ async function startFactorialTask() {
             addNotification(`❌ Ошибка сети: ${error}`)
         }
     }
+
+
+// --- Функция покупки товара (Stripe Checkout) ---
+async function buyProduct(productId) {
+    const token = localStorage.getItem('accessToken')
+    if (!token) {
+        alert("Пожалуйста, авторизуйтесь для покупки.")
+        return
+    }
+
+    try {
+        // Дергаем наш новый роутер FastAPI
+        const response = await fetch(`${API_URL}/payment/checkout/${productId}`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        })
+
+        const data = await response.json()
+
+        if (response.ok) {
+            // МАГИЯ ЗДЕСЬ: перенаправляем браузер на защищенную страницу Stripe
+            window.location.href = data.checkout_url
+        } else {
+            alert('Ошибка покупки: ' + (data.detail || "Неизвестная ошибка"))
+        }
+    } catch (error) {
+        alert("Ошибка сети: " + error)
+    }
+}
