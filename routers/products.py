@@ -64,6 +64,15 @@ async def get_products(
     """Возвращает список продуктов текущего пользователя."""
     return await service.get_products(current_user['username'], limit, offset)
 
+
+@router.get('/all', response_model=List[Product])
+async def display_all_products(
+    limit: int = 10, 
+    offset: int = 0,
+    service: ProductService = Depends(get_product_service)
+):
+    return await service.get_list_of_all_products(limit, offset)
+ 
                 
            
 # Защищённый эндпоинт для создания нового продукта, доступный только авторизованным пользователям.

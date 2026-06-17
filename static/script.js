@@ -186,7 +186,7 @@ async function getProducts() {
     const responseArea = document.getElementById('response-area')
 
     try {
-        const response = await fetch(`${API_URL}/products/?limit=${LIMIT}&offset=${currentOffset}`, {
+        const response = await fetch(`${API_URL}/products/all?limit=${LIMIT}&offset=${currentOffset}`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${token}`
@@ -213,7 +213,30 @@ async function getProducts() {
         } else if (products.length === 0) {
             html += `<p style="color: #718096; width: 100%;">Больше товаров нет.</p>`;
         } else {
+
+            // 1. Узнаем, кто сейчас сидит на сайте
+            const currentUsername = document.getElementById('display-username').innerText
+
             products.forEach(p => {
+            let buttonsHtml = '' // место для правильных кнопок
+            
+            // 2. Сравниваем владельца товара с нашим юзером 
+            // Если товар НАШ, кладем кнопки редактирования и удаления
+            if (p.owner_username === currentUsername) {
+                buttonsHtml = `
+                    <div style="margin-top: auto; display: flex; gap: 8px;">
+                        <button onclick="editProduct('${p.id}', '${p.name}', ${p.price})" style="...">✏️ Цена</button>
+                        <button onclick="deleteProduct('${p.id}')" style="...">🗑️ Удал.</button>
+                    </div>
+                `;
+            } else {
+                // Если товар ЧУЖОЙ, кладем только кнопку покупки
+                buttonsHtml = `
+                    <button onclick="buyProduct('${p.id}')" style="... width: 100%;">💳 Купить товар</button>
+                `;
+            }
+
+                
             html += `
             <div style="background: white; border: 2px solid #edf2f7; border-radius: 12px; padding: 20px; width: 220px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); transition: transform 0.2s; display: flex; flex-direction: column;">
                 <h4 style="margin-bottom: 10px; color: #2d3748; font-size: 1.2em;">${p.name}</h4>
@@ -227,12 +250,7 @@ async function getProducts() {
                     <span style="background: #edf2f7; color: #4a5568; padding: 4px 8px; border-radius: 6px; font-size: 0.8em;">ID: ${p.id}</span>
                 </div>
                 
-                <div style="margin-top: auto; display: flex; gap: 8px;">
-                    <button onclick="editProduct('${p.id}', '${p.name}', ${p.price})" style="background: #cbd5e0; color: #2d3748; padding: 6px 10px; font-size: 0.9em; flex: 1; border-radius: 6px; border: none; cursor: pointer;">✏️ Цена</button>
-                    <button onclick="deleteProduct('${p.id}')" style="background: #fc8181; color: white; padding: 6px 10px; font-size: 0.9em; flex: 1; border-radius: 6px; border: none; cursor: pointer;">🗑️ Удал.</button>
-                </div>
-
-                <button onclick="buyProduct('${p.id}')" style="background: #48bb78; color: white; padding: 8px; font-size: 1em; border-radius: 6px; border: none; cursor: pointer; margin-top: 8px; font-weight: bold; width: 100%;">💳 Купить товар</button>
+                ${buttonsHtml}
                 
             </div>
             `;

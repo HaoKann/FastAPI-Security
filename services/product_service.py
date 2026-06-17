@@ -23,6 +23,13 @@ class ProductService:
             except Exception as e:
                 print(f"⚠️ Ошибка сброса кэша: {e}")
 
+
+    async def get_list_of_all_products(self, limit: int, offset: int):
+    
+        records = await self.repo.get_all_products(limit, offset)
+        return records
+
+
     async def get_products(self, username: str, limit: int, offset: int):
         CACHE_KEY = f"products:{username}:{limit}:{offset}"
 

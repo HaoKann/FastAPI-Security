@@ -8,6 +8,14 @@ class ProductRepository:
     def __init__(self, pool: asyncpg.Pool):
         self.pool = pool
 
+    async def get_all_products(self, limit: int, offset: int):
+        async with self.pool.acquire() as conn:
+            records = await conn.fetch(
+                "SELECT * FROM products LIMIT $1 OFFSET $2",
+                limit, offset
+            )
+            return [dict(p) for p in records]
+
     async def get_all_by_user(self, username: str, limit: int, offset: int):
         async with self.pool.acquire() as conn:
             records = await conn.fetch(
