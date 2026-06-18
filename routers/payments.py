@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_pool
 from auth import get_current_user
 from repositories.product_repository import ProductRepository
 from  services.payment_service import payment_service
 from models import User
+import stripe
+from config import settings
 
 router = APIRouter(prefix='/payment', tags=['Платежи'])
 
@@ -31,3 +33,30 @@ async def buy_products(
 
     # 5. Возвращаем ссылку фронтенду
     return {'checkout_url': checkout_url}
+
+
+@router.post('/webhook')
+async def stripe_webhook(request: Request, stripe_signature: str = Header(None)):
+    # 1. Читаем тело запроса как сырые байты
+    payload = await request.body()
+
+    try:
+        # 2. Stripe проверяет подпись с помощью нашего секрета из .env
+        event = stripe.Webhook.construct_event(
+            payload, stripe_signature, settings.STRIPE_WEBHOOK_SECRET
+        )
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail='Invalid signature')
+    except ValueError:
+        raise HTTPException(status_code=400, detail='Invalid payload')
+    
+    # 3. Обрабатываем успешную оплату
+    if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
+        metadata = session['metadata']
+
+        print(f"✅ Пользователь {metadata['username']} купил товар {metadata['product_id']}")
+        print(f"💰 Успешная оплата! Сессия: {session['id']}")
+
+    # Обязательно возвращаем 200 OK, чтобы Stripe не пытался слать запрос снова
+    return {'status': 'success'}

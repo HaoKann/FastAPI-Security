@@ -30,7 +30,7 @@ class PaymentService:
                         'currency':'usd',
                         'product_data': {
                             'name':product['name'],
-                            'description': f"Поыродавец: {product['owner_username']}"
+                            'description': f"Продавец: {product['owner_username']}"
                         },
                         'unit_amount': price_in_cents,
                     },

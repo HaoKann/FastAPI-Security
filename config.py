@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     SENTRY_DSN: str | None = None
 
     STRIPE_SECRET_KEY: str
+    STRIPE_WEBHOOK_SECRET: str
 
     # Логика загрузки .env файла
     model_config = SettingsConfigDict(
