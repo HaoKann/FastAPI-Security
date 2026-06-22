@@ -60,3 +60,14 @@ class ProductRepository:
             return dict(record) if record else None
         
     
+    async def transfer_product_ownership(self, username: str, product_id: int):
+        async with self.pool.acquire() as conn:
+            record = await conn.fetchrow(
+                '''UPDATE products
+                SET owner_username = $1
+                WHERE id = $2
+                RETURNING * 
+                ''',
+                username, product_id
+                )
+            return (dict(record) if record else None)

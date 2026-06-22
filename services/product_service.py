@@ -116,3 +116,9 @@ class ProductService:
         await self._clear_cache(username)
 
         return updated_product 
+    
+
+    async def change_product_ownership(self, username: str, product_id: int):
+
+        records = await self.repo.transfer_product_ownership(username, product_id)
+        return records 

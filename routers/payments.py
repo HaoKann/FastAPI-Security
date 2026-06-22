@@ -3,7 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_pool
 from auth import get_current_user
 from repositories.product_repository import ProductRepository
-from  services.payment_service import payment_service
+from services.product_service import ProductService 
+from services.payment_service import payment_service
 from models import User
 import stripe
 from config import settings
@@ -36,12 +37,19 @@ async def buy_products(
 
 
 @router.post('/webhook')
-async def stripe_webhook(request: Request, stripe_signature: str = Header(None)):
-    # 1. Читаем тело запроса как сырые байты
+async def stripe_webhook(
+    request: Request, 
+    stripe_signature: str = Header(None), 
+    db: AsyncSession = Depends(get_pool)
+):
+    # Инициализируем сервис
+    product_service = ProductService(db)
+
+    # Читаем тело запроса как сырые байты
     payload = await request.body()
 
     try:
-        # 2. Stripe проверяет подпись с помощью нашего секрета из .env
+        # Stripe проверяет подпись с помощью нашего секрета из .env
         event = stripe.Webhook.construct_event(
             payload, stripe_signature, settings.STRIPE_WEBHOOK_SECRET
         )
@@ -55,8 +63,12 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
         session = event['data']['object']
         metadata = session['metadata']
 
+
+
         print(f"✅ Пользователь {metadata['username']} купил товар {metadata['product_id']}")
-        print(f"💰 Успешная оплата! Сессия: {session['id']}")
+        
+        await product_service.change_product_ownership(metadata['username'], int(metadata['product_id']) )
+       
 
     # Обязательно возвращаем 200 OK, чтобы Stripe не пытался слать запрос снова
     return {'status': 'success'}
