@@ -8,6 +8,8 @@ from services.payment_service import payment_service
 from models import User
 import stripe
 from config import settings
+from websocket import manager
+
 
 router = APIRouter(prefix='/payment', tags=['Платежи'])
 
@@ -43,7 +45,8 @@ async def stripe_webhook(
     db: AsyncSession = Depends(get_pool)
 ):
     # Инициализируем сервис
-    product_service = ProductService(db)
+    product_repo = ProductRepository(db)
+    product_service = ProductService(product_repo)
 
     # Читаем тело запроса как сырые байты
     payload = await request.body()
@@ -63,10 +66,16 @@ async def stripe_webhook(
         session = event['data']['object']
         metadata = session['metadata']
 
+        product_id = int(metadata['product_id'])
+        buyer_username = metadata['username']
 
-
-        print(f"✅ Пользователь {metadata['username']} купил товар {metadata['product_id']}")
+        print(f"✅ Пользователь {buyer_username} купил товар {product_id}")
         
+        product_info = await product_service.get_product_by_id(product_id)
+        previous_owner = product_info['owner_username']
+        await manager.send_personal_message(message=f'Ваш товар был куплен {buyer_username}', username=previous_owner)
+
+
         await product_service.change_product_ownership(metadata['username'], int(metadata['product_id']) )
        
 

@@ -43,7 +43,6 @@ class ProductService:
             except Exception:
                 pass # Игнорируем ошибку чтения и идем в БД
 
-
         # 2. Идем в базу через Репозиторий!
         print(f"❌ CACHE MISS: Идем в базу за товарами для {username}")
         records = await self.repo.get_all_by_user(username, limit, offset)
@@ -57,6 +56,13 @@ class ProductService:
                 pass
 
         return products_data
+
+
+    async def get_product_by_id(self, product_id: int):
+
+        records = await self.repo.get_by_id(product_id)
+        return records
+
 
     async def create_product(self, username: str, name: str, price: float):
         # 1 Создаем товар в БД через репозиторий
