@@ -14,6 +14,7 @@ class User(Base):
     username = Column(String, unique=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     avatar_url = Column(String, nullable=True)
+    
 
 # --- Модель таблицы Products ---
 # Раньше было: CREATE TABLE products (...)

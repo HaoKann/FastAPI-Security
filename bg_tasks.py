@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from auth import get_current_user
 from celery_worker import celery_app
 import os
+import time
 
 import redis.asyncio as aioredis
 import json
@@ -154,7 +155,17 @@ def compute_sum_range_task(self, start: int, end: int, username: str):
     
     return asyncio.run(_run_async_logic())
 
-        
+@celery_app.task(name='send_email_to_user')
+def send_email_to_user_task(email: str, product_id: int):
+    print(f"⏳ Начинаем отправку письма для {email} по товару {product_id}")
+
+    # Имитация долгого ответа от почтового сервера
+    time.sleep(3)
+
+    print(f"✅ Письмо успешно отправлено (имитация) для {email}")
+    return True
+
+
 # --- 4. Эндпоинты, которые ставят задачи в очередь ---
 
 @router.post('/factorial', status_code=status.HTTP_202_ACCEPTED)
