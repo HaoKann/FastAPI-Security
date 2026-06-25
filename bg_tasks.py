@@ -13,10 +13,14 @@ from dotenv import load_dotenv
 from auth import get_current_user
 from celery_worker import celery_app
 import os
-import time
 
 import redis.asyncio as aioredis
 import json
+
+
+import smtplib
+from email.message import EmailMessage
+from config import settings
 
 # --- 1. Импорты и настройка ---
 
@@ -157,13 +161,38 @@ def compute_sum_range_task(self, start: int, end: int, username: str):
 
 @celery_app.task(name='send_email_to_user')
 def send_email_to_user_task(email: str, product_id: int):
-    print(f"⏳ Начинаем отправку письма для {email} по товару {product_id}")
+    try:
+        # 1. Создаем само письмо (заполняем конверт)
+        msg = EmailMessage()
+        msg['Subject'] = f'Успешная покупка товара #{product_id}!'
+        msg['From'] = settings.SMTP_USER
+        msg['To'] = email
 
-    # Имитация долгого ответа от почтового сервера
-    time.sleep(3)
+        # 2. Пишем текст письма
+        msg.set_content(f"""
+        Здравствуйте!
 
-    print(f"✅ Письмо успешно отправлено (имитация) для {email}")
-    return True
+        Спасибо за покупку товара с ID: {product_id}.
+        Это автоматическое письмо, подтверждающее вашу оплату.
+
+        С уважением,
+        Ваш FastAPI Магазин
+        """)
+
+        print(f"⏳ Подключаемся к серверу Google для отправки на {email}...")
+
+        # 3. Подключаемся к серверу Google (через защищенный порт 465) и отправляем
+        with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            server.send_message(msg)
+
+            print(f"✅ Боевое письмо успешно отправлено на {email}!")
+            return True
+        
+    except Exception as e:
+        print(f"❌ Ошибка при отправке письма: {e}")
+        return False
+
 
 
 # --- 4. Эндпоинты, которые ставят задачи в очередь ---

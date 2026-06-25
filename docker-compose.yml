@@ -54,6 +54,14 @@ services:
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL}
       S3_BUCKET_NAME: ${S3_BUCKET_NAME}
 
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+
   # 4. Приложение FastAPI
   web:
     build: . # Строим образ из Dockerfile в текущей папке
@@ -87,6 +95,9 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL}
       S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
 
   minio:
     image: minio/minio:latest

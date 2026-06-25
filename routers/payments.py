@@ -74,8 +74,8 @@ async def stripe_webhook(
         buyer_username = metadata['username']
 
         # Достаем email покупателя безопасно
-        customer_details = session.get('customer_details', {})
-        buyer_email = customer_details.get('email')
+        customer_details = session['customer_details']        
+        buyer_email = customer_details['email'] if customer_details else None
 
         print(f"✅ Пользователь {buyer_username} купил товар {product_id}")
         
