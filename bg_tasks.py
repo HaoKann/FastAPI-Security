@@ -162,22 +162,51 @@ def compute_sum_range_task(self, start: int, end: int, username: str):
 @celery_app.task(name='send_email_to_user')
 def send_email_to_user_task(email: str, product_id: int):
     try:
-        # 1. Создаем само письмо (заполняем конверт)
+        # Создаем само письмо (заполняем конверт)
         msg = EmailMessage()
         msg['Subject'] = f'Успешная покупка товара #{product_id}!'
         msg['From'] = settings.SMTP_USER
         msg['To'] = email
 
-        # 2. Пишем текст письма
-        msg.set_content(f"""
-        Здравствуйте!
+        # 1. Сначала добавляем обычный текст, потом HTML. Почтовый клиент выберет, что показать.
+        msg.set_content(f'Спасибо за покупку товара с ID {product_id}! Мы ценим ваш выбор.')
 
-        Спасибо за покупку товара с ID: {product_id}.
-        Это автоматическое письмо, подтверждающее вашу оплату.
+        # 2 Создаем HTML-версию письма
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #f4f7f6; padding: 20px; }}
+                .container {{ background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); max-width: 600px; margin: auto; }}
+                .header {{ text-align: center; padding-bottom: 20px; border-bottom: 1px solid #eeeeee; }}
+                .header h2 {{ color: #2c3e50; margin: 0; }}
+                .content {{ padding: 20px 0; font-size: 16px; color: #555555; line-height: 1.6; }}
+                .success-text {{ color: #27ae60; font-weight: bold; font-size: 18px; }}
+                .footer {{ margin-top: 20px; font-size: 12px; color: #999999; text-align: center; border-top: 1px solid #eeeeee; padding-top: 20px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h2>Ваш FastAPI Магазин 🚀</h2>
+                </div>
+                <div class="content">
+                    <p>Здравствуйте!</p>
+                    <p class="success-text">Ваша оплата успешно прошла!</p>
+                    <p>Вы приобрели товар с <strong>ID: {product_id}</strong>. Мы рады, что вы выбрали наш магазин, и уже передали информацию продавцу.</p>
+                </div>
+                <div class="footer">
+                    <p>Это автоматическое письмо, пожалуйста, не отвечайте на него.</p>
+                    <p>&copy; 2026 Ваш Проект</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
 
-        С уважением,
-        Ваш FastAPI Магазин
-        """)
+        # 3 Добавляем HTML как главную альтернативку
+        msg.add_alternative(html_content, subtype='html')
 
         print(f"⏳ Подключаемся к серверу Google для отправки на {email}...")
 

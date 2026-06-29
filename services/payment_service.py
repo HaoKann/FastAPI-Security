@@ -48,8 +48,8 @@ class PaymentService:
 
                 # Куда перекинуть юзера после успешной или отмененной оплаты
                 # Пока ставим заглушки на локалхост
-                success_url="http://localhost:8000/success?session_id={CHECKOUT_SESSION_ID}",
-                cancel_url="http://localhost:8000/cancel",
+                success_url="http://localhost:8001/success?session_id={CHECKOUT_SESSION_ID}",
+                cancel_url="http://localhost:8001/cancel",
 
                 # Применяем защиту от дублей
                 idempotency_key=idem_key
