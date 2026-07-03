@@ -6,11 +6,12 @@ import json
 from repositories.product_repository import ProductRepository
 
 class ProductService:
-    def __init__(self, repository: ProductRepository, redis=None, background_tasks=None, manager=None):
+    def __init__(self, repository: ProductRepository, redis=None, background_tasks=None, manager=None, s3_service=None):
         self.repo = repository
         self.redis = redis
         self.background_tasks = background_tasks
         self.manager = manager
+        self.s3_service = s3_service
 
     async def _clear_cache(self, username: str):
         """Вспомогательный метод для очистки кэша юзера"""
@@ -46,7 +47,14 @@ class ProductService:
         # 2. Идем в базу через Репозиторий!
         print(f"❌ CACHE MISS: Идем в базу за товарами для {username}")
         records = await self.repo.get_all_by_user(username, limit, offset)
+
+        # Превращаем объекты Record из базы в удобный список словарей
         products_data = jsonable_encoder(records)
+
+        for product in products_data:
+            if product.get('image_url'):
+                full_url = await self.s3_service.get_presigned_url(product['image_url'])
+                product['full_image_url'] = full_url
         
         # 3. Сохраняем в кэш
         if self.redis:

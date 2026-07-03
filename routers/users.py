@@ -2,12 +2,13 @@ from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from s3_service import s3_client
 from auth import get_current_user
 from database import get_pool
+from typing import Annotated
 
 router = APIRouter(tags=['Users'])
 
-@router.patch('/users/me/avatar')
+@router.post('/users/me/avatar')
 async def update_avatar(
-    file: UploadFile = File(...),
+    file: Annotated[UploadFile, File(...)],
     current_user: dict = Depends(get_current_user), # Требуем, чтобы пользователь был залогинен
     pool = Depends(get_pool) #  Подключаемся к базе
 ):

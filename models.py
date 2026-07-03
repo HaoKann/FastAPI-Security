@@ -26,7 +26,8 @@ class Product(Base):
     description = Column(String, nullable=True)
     price = Column(Integer, nullable=False)
     is_active = Column(Boolean, default=True, server_default='true')
-
+    image_url = Column(String, nullable=True)
+    
     # Связь с юзером (внешний ключ)
     owner_username = Column(String, ForeignKey('users.username'), nullable=False)
 

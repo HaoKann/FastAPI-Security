@@ -1,5 +1,5 @@
 from typing import List, Optional, Annotated
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, UploadFile, HTTPException, File
 from pydantic import BaseModel, Field, field_validator, computed_field
 
 
@@ -7,6 +7,10 @@ from pydantic import BaseModel, Field, field_validator, computed_field
 from auth import get_current_user
 from database import get_product_service
 from services.product_service import ProductService
+
+from s3_service import s3_client
+import asyncpg
+from database import get_pool
 
 # Создаем APIRouter для этого модуля
 router = APIRouter(
@@ -22,6 +26,11 @@ class Product(BaseModel):
     name: str
     price: float
     owner_username: str
+
+    # Короткое имя из базы 
+    image_url: Optional[str] = None
+    # Длинная ссылка сгенерированная в роутере
+    full_image_url: Optional[str] = None
 
     # Вычисляемое поле: цена с налогом (например +12% НДС)
     @computed_field # type: ignore
@@ -48,7 +57,7 @@ class ProductCreate(BaseModel):
 class ProductUpdate(BaseModel):
     name: Optional[str] = None
     price: Optional[float] = None
-
+    image_url: Optional[str] = None
 
 # --- Эндпоинты ---
 
@@ -72,8 +81,22 @@ async def display_all_products(
     service: ProductService = Depends(get_product_service)
 ):
     return await service.get_list_of_all_products(limit, offset)
- 
-                
+
+@router.get('/{product_id}', response_model=Product)
+async def get_product(product_id: int, pool: asyncpg.Pool = Depends(get_pool)):
+    async with pool.acquire() as conn: 
+        product = await conn.fetchrow("SELECT * FROM products WHERE id = $1", product_id)
+
+    if not product:
+        raise HTTPException(status_code=404, detail="Продукт не найден") 
+
+    product_dict = dict(product)
+
+    if product_dict.get('image_url'):
+        full_image_url = await s3_client.get_presigned_url(product_dict.get('image_url'))
+        product_dict['full_image_url'] = full_image_url
+
+    return product_dict
            
 # Защищённый эндпоинт для создания нового продукта, доступный только авторизованным пользователям.
 # ИСПРАВЛЕНО: Эндпоинт теперь принимает Pydantic-модель ProductCreate
@@ -117,3 +140,22 @@ async def update_product(
         name=products_update.name,
         price=products_update.price
     )
+
+
+@router.post('/{product_id}/image', response_model=Product)
+async def add_photo(
+    product_id: int,
+    image: Annotated[UploadFile, File(...)],
+    pool: asyncpg.Pool = Depends(get_pool)
+):
+    filename = await s3_client.upload_file(file=image)
+    
+    async with pool.acquire() as conn:
+        new_photo = await conn.fetchrow("UPDATE products SET image_url = $1 WHERE id = $2 RETURNING *",
+                            filename, product_id
+    )
+        
+    if not new_photo:   
+        raise HTTPException(status_code=404, detail="Продукт не найден")
+
+    return dict(new_photo)

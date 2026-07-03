@@ -153,7 +153,7 @@ async function uploadAvatar() {
 
     try {
         const response = await fetch(`${API_URL}/users/me/avatar`, {
-            method: 'PATCH',
+            method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`
             },
@@ -168,13 +168,16 @@ async function uploadAvatar() {
             // Он сам сходит на бэкенд, получит временный URL на 1 час и отрисует картинку!
             getMe()
         } else {
-            alert('Ошибка загрузки: ' + data.detail)
+            // ЛОВИМ ПОДРОБНУЮ ОШИБКУ ОТ FASTAPI
+            const errorData = await response.json()
+            const errorDetail = JSON.stringify(errorData.detail, null, 2)
+            alert('FastAPI жалуется на данные:\n' + errorDetail)
         }
     } catch (error) {
+        // ВОТ ЗДЕСЬ БЫЛ ОБРЫВ. ТЕПЕРЬ ВСЁ ИСПРАВЛЕНО:
         responseArea.innerText = "Ошибка сети: " + error
-    }
-
-}
+    } 
+} // <---
 
 // --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ДЛЯ ПАГИНАЦИИ ---
 let currentOffset = 0
