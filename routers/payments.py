@@ -10,6 +10,9 @@ import stripe
 from config import settings
 from websocket import manager
 from bg_tasks import send_email_to_user_task
+from fastapi.templating import Jinja2Templates
+
+templates = Jinja2Templates(directory='templates')
 
 router = APIRouter(prefix='/payment', tags=['Платежи'])
 
@@ -37,6 +40,19 @@ async def buy_products(
     # 5. Возвращаем ссылку фронтенду
     return {'checkout_url': checkout_url}
 
+@router.get('/success')
+async def payment_success(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name='success.html'
+    )
+    
+@router.get('/cancel')
+async def payment_cancel(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name='cancel.html'
+    )
 
 @router.post('/webhook')
 async def stripe_webhook(
@@ -84,7 +100,7 @@ async def stripe_webhook(
 
         # 1. Отправляем уведомление продавцу (WebSockets)
         await manager.send_personal_message(
-            message=f'Ваш товар {product_info['name']} был куплен {buyer_username}', 
+            message=f"Ваш товар {product_info['name']} был куплен {buyer_username}", 
             username=previous_owner
         )
 
