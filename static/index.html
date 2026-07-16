@@ -1,269 +1,295 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FastAPI Auth Client</title>
     <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --secondary: #f3f4f6;
+            --secondary-hover: #e5e7eb;
+            --secondary-text: #374151;
+            --danger: #ef4444;
+            --danger-hover: #dc2626;
+            --bg-gradient-1: #667eea;
+            --bg-gradient-2: #764ba2;
+            --text-main: #1f2937;
+            --border: #d1d5db;
+        }
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, var(--bg-gradient-1) 0%, var(--bg-gradient-2) 100%);
             min-height: 100vh;
             padding: 40px 20px;
-            color: #333;
+            color: var(--text-main);
         }
 
         .container {
-            max-width: 900px;
+            max-width: 800px;
             margin: 0 auto;
         }
 
         h1 {
             text-align: center;
             color: white;
-            font-size: 2.5em;
-            margin-bottom: 40px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+            font-size: 2.2em;
+            margin-bottom: 30px;
+            font-weight: 700;
+            text-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
 
         .box {
             background: white;
-            border-radius: 16px;
-            padding: 30px;
+            border-radius: 20px;
+            padding: 35px;
             margin-bottom: 24px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .box:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 15px 50px rgba(0,0,0,0.2);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            animation: fadeIn 0.4s ease-out;
         }
 
         .box h3 {
-            color: #667eea;
+            color: var(--primary);
             margin-bottom: 20px;
-            font-size: 1.5em;
+            font-size: 1.4em;
             display: flex;
             align-items: center;
             gap: 10px;
         }
 
         .box h4 {
-            color: #555;
+            color: var(--text-main);
             margin-bottom: 15px;
             font-size: 1.1em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
         input[type="text"],
+        input[type="number"],
         input[type="password"],
         input[type="file"] {
             width: 100%;
-            padding: 14px 18px;
+            padding: 12px 16px;
             margin-bottom: 16px;
-            border: 2px solid #e0e0e0;
+            background-color: #f9fafb;
+            border: 1px solid var(--border);
             border-radius: 10px;
             font-size: 15px;
-            transition: all 0.3s;
-            font-family: inherit;
+            transition: all 0.2s;
+            color: var(--text-main);
         }
 
-        input[type="text"]:focus,
-        input[type="password"]:focus {
+        input:focus {
             outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
+            background-color: white;
         }
 
         button {
-            padding: 14px 24px;
+            padding: 12px 20px;
             cursor: pointer;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background-color: var(--primary);
             color: white;
             border: none;
             border-radius: 10px;
             font-size: 15px;
             font-weight: 600;
-            transition: all 0.3s;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
         }
 
         button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+            background-color: var(--primary-hover);
+            transform: translateY(-1px);
         }
 
         button:active {
-            transform: translateY(0);
+            transform: translateY(1px);
         }
 
         button.secondary {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            box-shadow: 0 4px 15px rgba(245, 87, 108, 0.4);
+            background-color: var(--secondary);
+            color: var(--secondary-text);
         }
 
         button.secondary:hover {
-            box-shadow: 0 6px 20px rgba(245, 87, 108, 0.6);
+            background-color: var(--secondary-hover);
         }
 
         button.logout {
-            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
-            box-shadow: 0 4px 15px rgba(250, 112, 154, 0.4);
+            background-color: var(--danger);
+            margin-top: 10px;
         }
 
         button.logout:hover {
-            box-shadow: 0 6px 20px rgba(250, 112, 154, 0.6);
+            background-color: var(--danger-hover);
         }
 
         #response-area {
-            background: #f8f9fa;
+            background: #1e293b;
+            color: #a7f3d0;
             padding: 20px;
-            border-radius: 10px;
+            border-radius: 12px;
             white-space: pre-wrap;
             word-wrap: break-word;
-            font-family: 'Courier New', monospace;
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
             font-size: 13px;
-            line-height: 1.6;
-            border: 2px solid #e0e0e0;
-            max-height: 400px;
+            line-height: 1.5;
+            max-height: 300px;
             overflow-y: auto;
-            color: #2d3748;
+            border: 1px solid #334155;
         }
 
         .hidden {
-            display: none;
+            display: none !important;
         }
 
         .profile-header {
             display: flex;
             align-items: center;
-            gap: 20px;
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
-            border-radius: 12px;
+            gap: 24px;
+            padding: 24px;
+            background: #f8fafc;
+            border-radius: 16px;
             margin-bottom: 24px;
+            border: 1px solid #e2e8f0;
         }
 
         #avatar-image {
-            width: 100px;
-            height: 100px;
+            width: 90px;
+            height: 90px;
             border-radius: 50%;
             object-fit: cover;
-            border: 4px solid white;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            border: 3px solid white;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
 
         .profile-info h3 {
-            color: #2d3748;
+            color: var(--text-main);
             margin-bottom: 8px;
-            font-size: 1.4em;
+            font-size: 1.3em;
         }
 
         .token-badge {
             display: inline-block;
-            background: #48bb78;
+            background: #10b981;
             color: white;
-            padding: 6px 12px;
+            padding: 4px 12px;
             border-radius: 20px;
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 600;
-            letter-spacing: 0.5px;
         }
 
         .upload-section {
-            margin-top: 20px;
+            background: #f8fafc;
             padding: 20px;
-            background: #f8f9fa;
             border-radius: 12px;
             border: 2px dashed #cbd5e0;
+            text-align: center;
         }
 
-        .button-group {
+        .upload-section input[type="file"] {
+            margin-bottom: 12px;
+            background: white;
+        }
+
+        .grid-2 {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .flex-row {
+            display: flex;
             gap: 12px;
-            margin-top: 20px;
+            margin-bottom: 24px;
+            align-items: flex-start;
+        }
+
+        .flex-row input {
+            margin-bottom: 0;
+        }
+
+        .flex-row button {
+            width: auto;
+            padding: 12px 24px;
         }
 
         hr {
             border: none;
-            border-top: 2px solid #e0e0e0;
-            margin: 24px 0;
+            border-top: 1px solid #e5e7eb;
+            margin: 28px 0;
+        }
+
+        /* Celery Notifications Area */
+        .notifications-container {
+            background: #0f172a;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 24px;
+        }
+
+        #notifications-area {
+            color: #38bdf8;
+            font-family: monospace;
+            font-size: 13px;
+            height: 100px;
+            overflow-y: auto;
         }
 
         @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .box {
-            animation: fadeIn 0.5s ease-out;
-        }
-
-        .emoji {
-            font-size: 1.2em;
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         /* Scrollbar styling */
-        #response-area::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        #response-area::-webkit-scrollbar-track {
-            background: #e0e0e0;
-            border-radius: 10px;
-        }
-
-        #response-area::-webkit-scrollbar-thumb {
-            background: #667eea;
-            border-radius: 10px;
-        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
         @media (max-width: 600px) {
-            h1 {
-                font-size: 1.8em;
-            }
-
-            .box {
-                padding: 20px;
-            }
-
             .profile-header {
                 flex-direction: column;
                 text-align: center;
             }
-
-            .button-group {
+            .grid-2, .flex-row {
                 grid-template-columns: 1fr;
+                flex-direction: column;
+            }
+            .flex-row button {
+                width: 100%;
             }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1><span class="emoji">🔐</span> FastAPI Auth Client</h1>
+        <h1><span class="emoji">⚡</span> FastAPI Auth Client</h1>
 
         <div id="auth-section" class="box">
-            
             <div id="login-box">
                 <h3><span class="emoji">🚪</span> Вход в систему</h3>
-                <input type="text" id="username" placeholder="Введите username">
-                <input type="password" id="password" placeholder="Введите пароль">
+                <input type="text" id="username" placeholder="Username">
+                <input type="password" id="password" placeholder="Пароль">
                 <button onclick="login()">Войти</button>
-                <p style="text-align: center; margin-top: 15px;">
-                    Нет аккаунта? <a href="#" onclick="toggleAuth('register')" style="color: #667eea; text-decoration: none; font-weight: bold;">Зарегистрироваться</a>
+                <p style="text-align: center; margin-top: 16px; color: var(--secondary-text); font-size: 14px;">
+                    Нет аккаунта? <a href="#" onclick="toggleAuth('register')" style="color: var(--primary); font-weight: 600;">Зарегистрироваться</a>
                 </p>
             </div>
 
@@ -271,87 +297,75 @@
                 <h3><span class="emoji">✨</span> Создать аккаунт</h3>
                 <input type="text" id="reg-username" placeholder="Придумайте username">
                 <input type="password" id="reg-password" placeholder="Придумайте пароль">
-                <button onclick="register()" class="secondary">Зарегистрироваться</button>
-                <p style="text-align: center; margin-top: 15px;">
-                    Уже есть аккаунт? <a href="#" onclick="toggleAuth('login')" style="color: #f5576c; text-decoration: none; font-weight: bold;">Войти</a>
+                <button onclick="register()">Зарегистрироваться</button>
+                <p style="text-align: center; margin-top: 16px; color: var(--secondary-text); font-size: 14px;">
+                    Уже есть аккаунт? <a href="#" onclick="toggleAuth('login')" style="color: var(--primary); font-weight: 600;">Войти</a>
                 </p>
             </div>
-
         </div>
 
         <div id="dashboard-section" class="box hidden">
+            
             <div class="profile-header">
                 <img id="avatar-image" src="" alt="Avatar">
                 <div class="profile-info">
-                    <h3><span class="emoji">👋</span> Привет, <span id="display-username">пользователь</span>!</h3>
+                    <h3 style="color: #1f2937; margin-bottom: 5px;"><span class="emoji">👋</span> Привет, <span id="display-username">юзер</span>!</h3>
                     <span class="token-badge">✓ Авторизован</span>
                 </div>
             </div>
 
             <div class="upload-section">
-                <h4><span class="emoji">📸</span> Обновить аватарку</h4>
+                <h4 style="justify-content: center;"><span class="emoji">📸</span> Обновить аватарку</h4>
                 <input type="file" id="avatar-input" accept="image/*">
                 <button onclick="uploadAvatar()" class="secondary">Загрузить фото</button>
             </div>
             
             <hr>
             
-            <h4><span class="emoji">🔒</span> Защищенные эндпоинты</h4>
-            <div class="button-group">
-                <button onclick="getMe()">Мой профиль</button>
-                <button onclick="getProducts()" class="secondary">Товары</button>
+            <h4><span class="emoji">🔒</span> Управление</h4>
+            <div class="grid-2">
+                <button onclick="getMe()" class="secondary">Мой профиль</button>
+                <button onclick="getProducts()" class="secondary">Показать товары</button>
+                <button onclick="getProducts()" class="secondary">Мои вещи</button>
             </div>
 
             <hr>
 
-            <h4><span class="emoji">➕</span> Добавить новый товар</h4>
-            <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
-                <input type="text" id="new-product-name" placeholder="Название товара" style="margin-bottom: 0; flex: 1;">
-                <input type="number" id="new-product-price" placeholder="Цена ($)" style="margin-bottom: 0; width: 120px;">
-                <button onclick="createProduct()" style="white-space: nowrap;">Добавить</button>
+            <h4><span class="emoji">➕</span> Добавить товар</h4>
+            <div class="flex-row">
+                <input type="text" id="new-product-name" placeholder="Название товара" style="flex: 2;">
+                <input type="number" id="new-product-price" placeholder="Цена ($)" style="flex: 1;">
+                <button onclick="createProduct()">Создать</button>
             </div>
-            
-        </div>
 
-
-        <hr>
+            <hr>
 
             <h4><span class="emoji">⚙️</span> Фоновые задачи (Celery)</h4>
-            
-            <div id="ws-status" style="margin-bottom: 15px; font-weight: bold; color: #718096; font-size: 0.9em; display: flex; align-items: center; gap: 8px;">
-                <div id="ws-indicator" style="width: 10px; height: 10px; border-radius: 50%; background: #fc8181;"></div>
+            <div id="ws-status" style="margin-bottom: 16px; font-weight: 600; color: #64748b; font-size: 13px; display: flex; align-items: center; gap: 8px;">
+                <div id="ws-indicator" style="width: 10px; height: 10px; border-radius: 50%; background: #ef4444;"></div>
                 <span id="ws-status-text">WebSockets: Отключено</span>
             </div>
 
-            <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
-                <input type="number" id="factorial-input" placeholder="Введите число (например, 7)" style="margin-bottom: 0; flex: 1;">
-                <button onclick="startFactorialTask()" style="white-space: nowrap; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
-                    Посчитать факториал
-                </button>
+            <div class="flex-row">
+                <input type="number" id="factorial-input" placeholder="Введите число (например, 7)" style="flex: 1;">
+                <button onclick="startFactorialTask()" style="background-color: #0ea5e9;">Посчитать факториал</button>
             </div>
 
-            <div style="background: #1a202c; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-                <h5 style="color: #a0aec0; margin-bottom: 10px; font-size: 0.85em; text-transform: uppercase; letter-spacing: 1px;">Live Уведомления</h5>
-                <div id="notifications-area" style="color: #48bb78; font-family: monospace; font-size: 13px; height: 120px; overflow-y: auto;">
-                    </div>
+           <div class="notifications-container">
+                <h5 style="color: #94a3b8; margin-bottom: 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Live Уведомления</h5>
+                <div id="notifications-area"></div>
             </div>
+            
+            <div id="products-area" style="margin-top: 20px; margin-bottom: 20px;"></div>
 
-            <button onclick="logout()" class="logout" style="width: 100%;">Выйти из системы</button>
+            <button onclick="logout()" class="logout">Выйти из системы</button>
 
-            <hr>
-        </div>
-
-        <div class="box">
-            <h3><span class="emoji">📡</span> Ответ сервера</h3>
+        <div class="box" style="padding: 20px;">
+            <h3 style="font-size: 1.1em; margin-bottom: 15px;"><span class="emoji">📡</span> Лог сервера</h3>
             <pre id="response-area">Здесь будет отображаться ответ от API...</pre>
         </div>
     </div>
 
-
-
-
-
-
-    <script src="/static/script.js?v=4"></script>
+    <script src="/static/script.js?v=5"></script>
 </body>
 </html>

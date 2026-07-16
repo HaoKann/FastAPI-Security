@@ -184,9 +184,11 @@ let currentOffset = 0
 const LIMIT = 2 // Выводим по 2 товара на страницу для наглядности
 
 // --- 4. Функция получения товаров с токеном---
+// --- 4. Функция получения товаров с токеном---
 async function getProducts() {
-    const token = localStorage.getItem('accessToken') // <-- 1. Достаем токен
+    const token = localStorage.getItem('accessToken')
     const responseArea = document.getElementById('response-area')
+    const productsArea = document.getElementById('products-area')
 
     try {
         const response = await fetch(`${API_URL}/products/all?limit=${LIMIT}&offset=${currentOffset}`, {
@@ -196,7 +198,6 @@ async function getProducts() {
             }
         })
 
-        // Если сервер упал (например, 500 ошибка), ловим текст ошибки, чтобы не было "Unexpected token I"
         if (!response.ok) {
             const errorText = await response.text()
             responseArea.innerText = `Ошибка сервера (${response.status}): ${errorText}`
@@ -205,92 +206,105 @@ async function getProducts() {
         
         const products = await response.json()
 
-       // РИСУЕМ КРАСИВЫЕ КАРТОЧКИ С КНОПКАМИ! 🎨
+       // 🎨 Обновленная витрина: CSS Grid + Глассморфизм
         let html = `
-            <h3 style="margin-bottom: 15px; color: #667eea;">📦 Витрина товаров</h3>
-            <div style="display: flex; flex-wrap: wrap; gap: 15px;">
+            <h3 style="margin-bottom: 20px; color: #1f2937; display: flex; align-items: center; gap: 8px;">
+                <span>📦</span> Витрина товаров
+            </h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; margin-bottom: 20px;">
         `;
         
         if (products.length === 0 && currentOffset === 0) {
-            html += `<p style="color: #718096; width: 100%;">У вас пока нет ни одного товара.</p>`;
+            html += `<p style="color: #718096; grid-column: 1 / -1;">У вас пока нет ни одного товара.</p>`;
         } else if (products.length === 0) {
-            html += `<p style="color: #718096; width: 100%;">Больше товаров нет.</p>`;
+            html += `<p style="color: #718096; grid-column: 1 / -1;">Больше товаров нет.</p>`;
         } else {
-
-            // 1. Узнаем, кто сейчас сидит на сайте
             const currentUsername = document.getElementById('display-username').innerText
 
             products.forEach(p => {
-            let buttonsHtml = '' // место для правильных кнопок
-            
-            // 2. Сравниваем владельца товара с нашим юзером 
-            // Если товар НАШ, кладем кнопки редактирования и удаления
-            if (p.owner_username === currentUsername) {
-                buttonsHtml = `
-                    <div style="margin-top: auto; display: flex; gap: 8px;">
-                        <button onclick="editProduct('${p.id}', '${p.name}', ${p.price})" style="...">✏️ Цена</button>
-                        <button onclick="deleteProduct('${p.id}')" style="...">🗑️ Удал.</button>
+                let buttonsHtml = '' 
+                
+                // Стили для аккуратных кнопок
+                const btnPrimary = `background: #4f46e5; color: white; padding: 10px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; width: 100%; transition: all 0.2s;`
+                const btnAction = `background: rgba(255,255,255,0.7); color: #374151; padding: 8px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1); cursor: pointer; font-weight: 600; flex: 1; transition: all 0.2s;`
+
+                if (p.owner_username === currentUsername) {
+                    buttonsHtml = `
+                        <div style="margin-top: auto; display: flex; gap: 8px;">
+                            <button onclick="editProduct('${p.id}', '${p.name}', ${p.price})" style="${btnAction}">✏️ Цена</button>
+                            <button onclick="deleteProduct('${p.id}')" style="${btnAction}">🗑️ Удал.</button>
+                        </div>
+                    `;
+                } else {
+                    buttonsHtml = `
+                        <div style="margin-top: auto;">
+                            <button onclick="buyProduct('${p.id}')" style="${btnPrimary}">💳 Купить</button>
+                        </div>
+                    `;
+                }
+                
+                // 🪟 Эффект глассморфизма (Glassmorphism)
+                const glassStyle = `
+                    background: rgba(255, 255, 255, 0.45);
+                    backdrop-filter: blur(12px);
+                    -webkit-backdrop-filter: blur(12px);
+                    border: 1px solid rgba(255, 255, 255, 0.6);
+                    border-radius: 16px;
+                    padding: 20px;
+                    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.05);
+                    display: flex;
+                    flex-direction: column;
+                `
+
+                html += `
+                <div style="${glassStyle}">
+                    <h4 style="margin-bottom: 8px; color: #1f2937; font-size: 1.1em; line-height: 1.3;">${p.name}</h4>
+                    <p style="color: #10b981; font-weight: 800; font-size: 1.4em; margin-bottom: 4px;">$${p.price}</p>
+                    
+                    <p style="color: #f59e0b; font-size: 0.85em; margin-bottom: 12px; font-weight: 600;">
+                        С налогом: $${p.price_with_tax}
+                    </p>
+
+                    <div style="margin-bottom: 16px;">
+                        <span style="background: rgba(255,255,255,0.8); color: #4b5563; padding: 4px 8px; border-radius: 6px; font-size: 0.75em; border: 1px solid rgba(0,0,0,0.05);">
+                            ID: ${p.id}
+                        </span>
                     </div>
-                `;
-            } else {
-                // Если товар ЧУЖОЙ, кладем только кнопку покупки
-                buttonsHtml = `
-                    <button onclick="buyProduct('${p.id}')" style="... width: 100%;">💳 Купить товар</button>
-                `;
-            }
-
-                
-            html += `
-            <div style="background: white; border: 2px solid #edf2f7; border-radius: 12px; padding: 20px; width: 220px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); transition: transform 0.2s; display: flex; flex-direction: column;">
-                <h4 style="margin-bottom: 10px; color: #2d3748; font-size: 1.2em;">${p.name}</h4>
-                <p style="color: #48bb78; font-weight: 800; font-size: 1.4em; margin-bottom: 5px;">$${p.price}</p>
-                
-                <p style="color: #ed8936; font-size: 0.85em; margin-bottom: 10px; font-weight: bold;">
-                    С налогом: $${p.price_with_tax}
-                </p>
-
-                <div style="margin-bottom: 15px;">
-                    <span style="background: #edf2f7; color: #4a5568; padding: 4px 8px; border-radius: 6px; font-size: 0.8em;">ID: ${p.id}</span>
+                    
+                    ${buttonsHtml}
                 </div>
-                
-                ${buttonsHtml}
-                
-            </div>
-            `;
-        });
+                `;
+            });
         }
         html += `</div>`;
 
         // Кнопки пагинации
         const currentPage = (currentOffset / LIMIT) + 1
-        const isLastPage = products.length < LIMIT // Если пришло меньше 2 товаров, значит это конец
+        const isLastPage = products.length < LIMIT 
+        
+        const pagBtnStyle = `padding: 10px 20px; border-radius: 8px; border: none; font-weight: 600; transition: 0.2s;`
         
         html += `
-        <div style="margin-top: 25px; display: flex; gap: 15px; align-items: center; justify-content: center; width: 100%; max-width: 450px;">
+        <div style="display: flex; gap: 15px; align-items: center; justify-content: center; width: 100%;">
             <button onclick="prevPage()" ${currentOffset === 0 ? 'disabled' : ''} 
-                    style="padding: 10px 20px; border-radius: 8px; border: none; font-weight: bold; transition: 0.2s;
-                           background: ${currentOffset === 0 ? '#e2e8f0' : '#667eea'}; 
-                           color: ${currentOffset === 0 ? '#a0aec0' : 'white'}; 
-                           cursor: ${currentOffset === 0 ? 'not-allowed' : 'pointer'};">
+                    style="${pagBtnStyle} background: ${currentOffset === 0 ? '#f3f4f6' : '#4f46e5'}; color: ${currentOffset === 0 ? '#9ca3af' : 'white'}; cursor: ${currentOffset === 0 ? 'not-allowed' : 'pointer'};">
                 ⬅️ Назад
             </button>
 
-            <span style="color: #4a5568; font-weight: bold; font-size: 1.1em;">
-                Страница ${currentPage}
+            <span style="color: #4b5563; font-weight: 600; font-size: 0.95em;">
+                Стр. ${currentPage}
             </span>
 
             <button onclick="nextPage(${isLastPage})" ${isLastPage ? 'disabled' : ''} 
-                    style="padding: 10px 20px; border-radius: 8px; border: none; font-weight: bold; transition: 0.2s;
-                           background: ${isLastPage ? '#e2e8f0' : '#667eea'}; 
-                           color: ${isLastPage ? '#a0aec0' : 'white'}; 
-                           cursor: ${isLastPage ? 'not-allowed' : 'pointer'};">
+                    style="${pagBtnStyle} background: ${isLastPage ? '#f3f4f6' : '#4f46e5'}; color: ${isLastPage ? '#9ca3af' : 'white'}; cursor: ${isLastPage ? 'not-allowed' : 'pointer'};">
                 Вперед ➡️
             </button>
         </div>
         `;
 
-        responseArea.innerHTML = html;
-        
+        productsArea.innerHTML = html;
+        responseArea.innerText = JSON.stringify(products, null, 2)
+
     } catch (error) {
         responseArea.innerText = "Ошибка: " + error
     }
