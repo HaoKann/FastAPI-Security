@@ -30,7 +30,9 @@ class Product(Base):
     
     # Связь с юзером (внешний ключ)
     owner_username = Column(String, ForeignKey('users.username'), nullable=False)
-
+    
+    # Поле для хранения оригинального создателя товара
+    creator_username = Column(String, nullable=True)
 
 # --- Модель таблицы Calculations (для фоновых задач) ---
 class Calculation(Base):

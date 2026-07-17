@@ -183,8 +183,8 @@ async function uploadAvatar() {
 let currentOffset = 0
 const LIMIT = 2 // Выводим по 2 товара на страницу для наглядности
 
-// --- 4. Функция получения товаров с токеном---
-// --- 4. Функция получения товаров с токеном---
+
+// --- 4. Функция получения товаров с токеном ---
 async function getProducts() {
     const token = localStorage.getItem('accessToken')
     const responseArea = document.getElementById('response-area')
@@ -205,28 +205,27 @@ async function getProducts() {
         }
         
         const products = await response.json()
+        const currentUsername = document.getElementById('display-username').innerText
 
-       // 🎨 Обновленная витрина: CSS Grid + Глассморфизм
+        // 🎨 Обновленная витрина: Используем классы темной темы из index.html
         let html = `
-            <h3 style="margin-bottom: 20px; color: #1f2937; display: flex; align-items: center; gap: 8px;">
+            <h3 style="margin-bottom: 20px; color: var(--text-main); display: flex; align-items: center; gap: 8px;">
                 <span>📦</span> Витрина товаров
             </h3>
             <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; margin-bottom: 20px;">
         `;
         
         if (products.length === 0 && currentOffset === 0) {
-            html += `<p style="color: #718096; grid-column: 1 / -1;">У вас пока нет ни одного товара.</p>`;
+            html += `<p style="color: var(--secondary-text); grid-column: 1 / -1;">У вас пока нет ни одного товара.</p>`;
         } else if (products.length === 0) {
-            html += `<p style="color: #718096; grid-column: 1 / -1;">Больше товаров нет.</p>`;
+            html += `<p style="color: var(--secondary-text); grid-column: 1 / -1;">Больше товаров нет.</p>`;
         } else {
-            const currentUsername = document.getElementById('display-username').innerText
-
             products.forEach(p => {
                 let buttonsHtml = '' 
                 
-                // Стили для аккуратных кнопок
-                const btnPrimary = `background: #4f46e5; color: white; padding: 10px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; width: 100%; transition: all 0.2s;`
-                const btnAction = `background: rgba(255,255,255,0.7); color: #374151; padding: 8px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1); cursor: pointer; font-weight: 600; flex: 1; transition: all 0.2s;`
+                // Стили для аккуратных кнопок с использованием переменных темной темы
+                const btnPrimary = `background: var(--primary); color: white; padding: 10px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; width: 100%; transition: all 0.2s;`
+                const btnAction = `background: var(--secondary); color: var(--text-main); padding: 8px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; flex: 1; transition: all 0.2s;`
 
                 if (p.owner_username === currentUsername) {
                     buttonsHtml = `
@@ -243,30 +242,18 @@ async function getProducts() {
                     `;
                 }
                 
-                // 🪟 Эффект глассморфизма (Glassmorphism)
-                const glassStyle = `
-                    background: rgba(255, 255, 255, 0.45);
-                    backdrop-filter: blur(12px);
-                    -webkit-backdrop-filter: blur(12px);
-                    border: 1px solid rgba(255, 255, 255, 0.6);
-                    border-radius: 16px;
-                    padding: 20px;
-                    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.05);
-                    display: flex;
-                    flex-direction: column;
-                `
-
+                // ВМЕСТО ИНЛАЙН СТИЛЕЙ ИСПОЛЬЗУЕМ КЛАСС .glass-card 
                 html += `
-                <div style="${glassStyle}">
-                    <h4 style="margin-bottom: 8px; color: #1f2937; font-size: 1.1em; line-height: 1.3;">${p.name}</h4>
-                    <p style="color: #10b981; font-weight: 800; font-size: 1.4em; margin-bottom: 4px;">$${p.price}</p>
+                <div class="glass-card" style="display: flex; flex-direction: column; min-height: 200px;">
+                    <h4 style="margin-bottom: 8px; color: var(--text-main); font-size: 1.1em; line-height: 1.3;">${p.name}</h4>
+                    <p style="color: var(--primary); font-weight: 800; font-size: 1.4em; margin-bottom: 4px;">$${p.price}</p>
                     
-                    <p style="color: #f59e0b; font-size: 0.85em; margin-bottom: 12px; font-weight: 600;">
+                    <p style="color: #fbbf24; font-size: 0.85em; margin-bottom: 12px; font-weight: 600;">
                         С налогом: $${p.price_with_tax}
                     </p>
 
                     <div style="margin-bottom: 16px;">
-                        <span style="background: rgba(255,255,255,0.8); color: #4b5563; padding: 4px 8px; border-radius: 6px; font-size: 0.75em; border: 1px solid rgba(0,0,0,0.05);">
+                        <span style="background: var(--bg-main); color: var(--secondary-text); padding: 4px 8px; border-radius: 6px; font-size: 0.75em; border: 1px solid var(--border);">
                             ID: ${p.id}
                         </span>
                     </div>
@@ -287,16 +274,16 @@ async function getProducts() {
         html += `
         <div style="display: flex; gap: 15px; align-items: center; justify-content: center; width: 100%;">
             <button onclick="prevPage()" ${currentOffset === 0 ? 'disabled' : ''} 
-                    style="${pagBtnStyle} background: ${currentOffset === 0 ? '#f3f4f6' : '#4f46e5'}; color: ${currentOffset === 0 ? '#9ca3af' : 'white'}; cursor: ${currentOffset === 0 ? 'not-allowed' : 'pointer'};">
+                    style="${pagBtnStyle} background: ${currentOffset === 0 ? 'var(--bg-main)' : 'var(--primary)'}; color: ${currentOffset === 0 ? 'var(--secondary-text)' : 'white'}; cursor: ${currentOffset === 0 ? 'not-allowed' : 'pointer'};">
                 ⬅️ Назад
             </button>
 
-            <span style="color: #4b5563; font-weight: 600; font-size: 0.95em;">
+            <span style="color: var(--text-main); font-weight: 600; font-size: 0.95em;">
                 Стр. ${currentPage}
             </span>
 
             <button onclick="nextPage(${isLastPage})" ${isLastPage ? 'disabled' : ''} 
-                    style="${pagBtnStyle} background: ${isLastPage ? '#f3f4f6' : '#4f46e5'}; color: ${isLastPage ? '#9ca3af' : 'white'}; cursor: ${isLastPage ? 'not-allowed' : 'pointer'};">
+                    style="${pagBtnStyle} background: ${isLastPage ? 'var(--bg-main)' : 'var(--primary)'}; color: ${isLastPage ? 'var(--secondary-text)' : 'white'}; cursor: ${isLastPage ? 'not-allowed' : 'pointer'};">
                 Вперед ➡️
             </button>
         </div>

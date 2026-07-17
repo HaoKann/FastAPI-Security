@@ -26,6 +26,7 @@ class Product(BaseModel):
     name: str
     price: float
     owner_username: str
+    creator_username: Optional[str] = None
 
     # Короткое имя из базы 
     image_url: Optional[str] = None
