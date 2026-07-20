@@ -74,7 +74,7 @@ class ProductService:
 
     async def create_product(self, username: str, name: str, price: float):
         # 1 Создаем товар в БД через репозиторий
-        new_product = await self.repo.create(name, price, username)
+        new_product = await self.repo.create(name, price, username, username)
         if not new_product:
             raise HTTPException(status_code=500, detail="Не удалось создать продукт")
         

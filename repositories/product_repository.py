@@ -19,16 +19,16 @@ class ProductRepository:
     async def get_all_by_user(self, username: str, limit: int, offset: int):
         async with self.pool.acquire() as conn:
             records = await conn.fetch(
-                "SELECT id, name, price, owner_username FROM products WHERE owner_username = $1 LIMIT $2 OFFSET $3",
+                "SELECT id, name, price, owner_username, creator_username FROM products WHERE owner_username = $1 LIMIT $2 OFFSET $3",
                 username, limit, offset 
             )
             return [dict(p) for p in records]
         
-    async def create(self, name: str, price: float, username: str):
+    async def create(self, name: str, price: float, username: str, creator_username: str):
         async with self.pool.acquire() as conn:
             record = await conn.fetchrow(
-                "INSERT INTO products (name, price, owner_username) VALUES ($1, $2, $3 ) RETURNING *",
-                name, price, username
+                "INSERT INTO products (name, price, owner_username, creator_username) VALUES ($1, $2, $3, $4 ) RETURNING *",
+                name, price, username, creator_username
             )
             return dict(record) if record else None
         

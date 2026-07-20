@@ -179,9 +179,11 @@ async function uploadAvatar() {
     } 
 } // <---
 
+
+// --- 4. Функция получения товаров с токеном ---
 // --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ДЛЯ ПАГИНАЦИИ ---
 let currentOffset = 0
-const LIMIT = 2 // Выводим по 2 товара на страницу для наглядности
+const LIMIT = 6 // Увеличим лимит, чтобы при разделении на категории страница не казалась пустой
 
 
 // --- 4. Функция получения товаров с токеном ---
@@ -207,68 +209,50 @@ async function getProducts() {
         const products = await response.json()
         const currentUsername = document.getElementById('display-username').innerText
 
-        // 🎨 Обновленная витрина: Используем классы темной темы из index.html
-        let html = `
+        // 1. РАЗДЕЛЯЕМ ТОВАРЫ НА ДВЕ КАТЕГОРИИ
+        const myInventory = products.filter(p => p.owner_username === currentUsername);
+        const storeProducts = products.filter(p => p.owner_username !== currentUsername);
+
+        let html = '';
+
+        // 2. ГЕНЕРИРУЕМ БЛОК "МОЙ ИНВЕНТАРЬ"
+        html += `
             <h3 style="margin-bottom: 20px; color: var(--text-main); display: flex; align-items: center; gap: 8px;">
-                <span>📦</span> Витрина товаров
+                <span>🎒</span> Мой Инвентарь
             </h3>
-            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; margin-bottom: 20px;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; margin-bottom: 40px;">
         `;
         
-        if (products.length === 0 && currentOffset === 0) {
-            html += `<p style="color: var(--secondary-text); grid-column: 1 / -1;">У вас пока нет ни одного товара.</p>`;
-        } else if (products.length === 0) {
-            html += `<p style="color: var(--secondary-text); grid-column: 1 / -1;">Больше товаров нет.</p>`;
+        if (myInventory.length === 0) {
+            html += `<p style="color: var(--secondary-text); grid-column: 1 / -1;">У вас пока нет товаров в инвентаре.</p>`;
         } else {
-            products.forEach(p => {
-                let buttonsHtml = '' 
-                
-                // Стили для аккуратных кнопок с использованием переменных темной темы
-                const btnPrimary = `background: var(--primary); color: white; padding: 10px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; width: 100%; transition: all 0.2s;`
-                const btnAction = `background: var(--secondary); color: var(--text-main); padding: 8px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; flex: 1; transition: all 0.2s;`
-
-                if (p.owner_username === currentUsername) {
-                    buttonsHtml = `
-                        <div style="margin-top: auto; display: flex; gap: 8px;">
-                            <button onclick="editProduct('${p.id}', '${p.name}', ${p.price})" style="${btnAction}">✏️ Цена</button>
-                            <button onclick="deleteProduct('${p.id}')" style="${btnAction}">🗑️ Удал.</button>
-                        </div>
-                    `;
-                } else {
-                    buttonsHtml = `
-                        <div style="margin-top: auto;">
-                            <button onclick="buyProduct('${p.id}')" style="${btnPrimary}">💳 Купить</button>
-                        </div>
-                    `;
-                }
-                
-                // ВМЕСТО ИНЛАЙН СТИЛЕЙ ИСПОЛЬЗУЕМ КЛАСС .glass-card 
-                html += `
-                <div class="glass-card" style="display: flex; flex-direction: column; min-height: 200px;">
-                    <h4 style="margin-bottom: 8px; color: var(--text-main); font-size: 1.1em; line-height: 1.3;">${p.name}</h4>
-                    <p style="color: var(--primary); font-weight: 800; font-size: 1.4em; margin-bottom: 4px;">$${p.price}</p>
-                    
-                    <p style="color: #fbbf24; font-size: 0.85em; margin-bottom: 12px; font-weight: 600;">
-                        С налогом: $${p.price_with_tax}
-                    </p>
-
-                    <div style="margin-bottom: 16px;">
-                        <span style="background: var(--bg-main); color: var(--secondary-text); padding: 4px 8px; border-radius: 6px; font-size: 0.75em; border: 1px solid var(--border);">
-                            ID: ${p.id}
-                        </span>
-                    </div>
-                    
-                    ${buttonsHtml}
-                </div>
-                `;
+            myInventory.forEach(p => {
+                html += generateProductCardHTML(p, true); // true означает, что это наш товар
             });
         }
         html += `</div>`;
 
-        // Кнопки пагинации
+
+        // 3. ГЕНЕРИРУЕМ БЛОК "МАГАЗИН" (Чужие товары)
+        html += `
+            <h3 style="margin-bottom: 20px; color: var(--text-main); display: flex; align-items: center; gap: 8px;">
+                <span>🏪</span> Магазин
+            </h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; margin-bottom: 20px;">
+        `;
+        
+        if (storeProducts.length === 0) {
+            html += `<p style="color: var(--secondary-text); grid-column: 1 / -1;">В магазине пока нет доступных товаров от других пользователей.</p>`;
+        } else {
+            storeProducts.forEach(p => {
+                html += generateProductCardHTML(p, false); // false означает, что товар чужой
+            });
+        }
+        html += `</div>`;
+
+        // 4. КНОПКИ ПАГИНАЦИИ (Остались без изменений)
         const currentPage = (currentOffset / LIMIT) + 1
         const isLastPage = products.length < LIMIT 
-        
         const pagBtnStyle = `padding: 10px 20px; border-radius: 8px; border: none; font-weight: 600; transition: 0.2s;`
         
         html += `
@@ -294,6 +278,70 @@ async function getProducts() {
 
     } catch (error) {
         responseArea.innerText = "Ошибка: " + error
+    }
+}
+
+// --- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ОТРИСОВКИ КАРТОЧКИ ---
+// Я вынес генерацию HTML карточки в отдельную функцию, чтобы не дублировать код
+function generateProductCardHTML(p, isOwner) {
+    const btnPrimary = `background: var(--primary); color: white; padding: 10px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; width: 100%; transition: all 0.2s;`
+    const btnAction = `background: var(--secondary); color: var(--text-main); padding: 8px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; flex: 1; transition: all 0.2s;`
+
+    let buttonsHtml = '';
+    
+    if (isOwner) {
+        buttonsHtml = `
+            <div style="margin-top: auto; display: flex; gap: 8px;">
+                <button onclick="editProduct('${p.id}', '${p.name}', ${p.price})" style="${btnAction}">✏️ Цена</button>
+                <button onclick="deleteProduct('${p.id}')" style="${btnAction}">🗑️ Удал.</button>
+            </div>
+        `;
+    } else {
+        buttonsHtml = `
+            <div style="margin-top: auto;">
+                <button onclick="buyProduct('${p.id}')" style="${btnPrimary}">💳 Купить</button>
+            </div>
+        `;
+    }
+
+    return `
+    <div class="glass-card" style="display: flex; flex-direction: column; min-height: 200px;">
+        <h4 style="margin-bottom: 8px; color: var(--text-main); font-size: 1.1em; line-height: 1.3;">${p.name}</h4>
+        
+        <!-- НОВОЕ: Вывод создателя товара -->
+        <p style="color: var(--secondary-text); font-size: 0.85em; margin-bottom: 8px;">
+            Создатель: <span style="color: var(--text-main); font-weight: bold;">${p.creator_username || 'Неизвестен'}</span>
+        </p>
+
+        <p style="color: var(--primary); font-weight: 800; font-size: 1.4em; margin-bottom: 4px;">$${p.price}</p>
+        <p style="color: #fbbf24; font-size: 0.85em; margin-bottom: 12px; font-weight: 600;">
+            С налогом: $${p.price_with_tax}
+        </p>
+
+        <div style="margin-bottom: 16px;">
+            <span style="background: var(--bg-main); color: var(--secondary-text); padding: 4px 8px; border-radius: 6px; font-size: 0.75em; border: 1px solid var(--border);">
+                ID: ${p.id}
+            </span>
+        </div>
+        
+        ${buttonsHtml}
+    </div>
+    `;
+}
+
+// --- ФУНКЦИИ УПРАВЛЕНИЯ ПАГИНАЦИЕЙ ---
+
+function prevPage() {
+    if (currentOffset >= LIMIT) {
+        currentOffset -= LIMIT; 
+        getProducts(); 
+    }
+}
+
+function nextPage(isLastPage) {
+    if (!isLastPage) {
+        currentOffset += LIMIT; 
+        getProducts(); 
     }
 }
 
