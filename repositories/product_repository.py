@@ -11,18 +11,44 @@ class ProductRepository:
     async def get_all_products(self, limit: int, offset: int):
         async with self.pool.acquire() as conn:
             records = await conn.fetch(
-                "SELECT * FROM products LIMIT $1 OFFSET $2",
+                """
+                SELECT
+                    products.id,
+                    products.name,
+                    products.price,
+                    products.image_url,
+                    products.creator_username,
+                    users.username AS owner_username,
+                    users.avatar_url AS owner_avatar
+                FROM products
+                JOIN users ON products.owner_username = users.username
+                WHERE LIMIT $1 OFFSET $2
+                """,
                 limit, offset
             )
             return [dict(p) for p in records]
+    
 
     async def get_all_by_user(self, username: str, limit: int, offset: int):
         async with self.pool.acquire() as conn:
             records = await conn.fetch(
-                "SELECT id, name, price, owner_username, creator_username FROM products WHERE owner_username = $1 LIMIT $2 OFFSET $3",
+                """
+                SELECT products.id,
+                       products.name,
+                       products.price,
+                       products.image_url,
+                       products.creator_username,
+                       users.username AS owner_username,
+                       users.avatar_url AS avatar_url
+                FROM products
+                JOIN users ON products.owner_username = users.username
+                WHERE products.owner_username = $1 
+                LIMIT $2 OFFSET $3
+                """,
                 username, limit, offset 
             )
             return [dict(p) for p in records]
+        
         
     async def create(self, name: str, price: float, username: str, creator_username: str):
         async with self.pool.acquire() as conn:
@@ -36,7 +62,20 @@ class ProductRepository:
     async def get_by_id(self, product_id: int):
         async with self.pool.acquire() as conn:
             record = await conn.fetchrow(
-                "SELECT * FROM products WHERE id = $1",
+                # "SELECT * FROM products WHERE id = $1",
+                """
+                SELECT products.id,
+                       products.name,
+                       products.price,
+                       products.image_url,
+                       products.creator_username,
+                       users.username AS owner_username,
+                       users.avatar_url AS avatar_url
+                FROM products
+                JOIN users ON products.owner_username = users.username
+                WHERE products.id = $1
+                """,
+                 
                 product_id
             )
             return dict(record) if record else None
