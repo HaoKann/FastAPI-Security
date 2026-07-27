@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, relationship
 
 # Это базовый класс для всех моделей
 class Base(DeclarativeBase):
@@ -14,6 +14,8 @@ class User(Base):
     username = Column(String, unique=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     avatar_url = Column(String, nullable=True)
+    
+    products = relationship('Product', back_populates='owner')
     
 
 # --- Модель таблицы Products ---
@@ -33,6 +35,8 @@ class Product(Base):
     
     # Поле для хранения оригинального создателя товара
     creator_username = Column(String, nullable=True)
+    
+    owner = relationship('User', back_populates='products')
 
 # --- Модель таблицы Calculations (для фоновых задач) ---
 class Calculation(Base):
