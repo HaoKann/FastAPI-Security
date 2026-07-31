@@ -1,25 +1,25 @@
 import asyncio
 import os
 from dotenv import load_dotenv
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from models import Base
+from config import settings
 
 # Загружаем пароль из .env файла
 load_dotenv()
 password = os.getenv("DB_PASSWORD")
 
-# Подключаемся к базе через порт 5433 (который мы пробросили из Докера)
-DATABASE_URL = f"postgresql+asyncpg://postgres:{password}@localhost:5433/fastapi_auth"
+# Собираем URL для SQLAlchemy
+SQLALCHEMY_DATABASE_URL = f"postgresql+asyncpg://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
 
-engine = create_async_engine(DATABASE_URL, echo=True)
+# Создаем асинхронный движок, управляет подключением под капотом
+engine = create_async_engine(SQLALCHEMY_DATABASE_URL, echo=True)
 
-async def init_models():
-    async with engine.begin() as conn:
-        print("Очищаем базу (если что-то осталось)...")
-        await conn.run_sync(Base.metadata.drop_all)
-        print("Создаем свежие таблицы из models.py...")
-        await conn.run_sync(Base.metadata.create_all)
-    print("Готово! Идеально чистая база создана.")
+# Создаем фабрику сессий для генерации новых сессий для каждого запроса к API
+async_sessionmaker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-if __name__ == "__main__":
-    asyncio.run(init_models())
+# Функция-зависимость для FastAPI
+async def get_db_session():
+    """Выдает одну сессию БД для конкретного запроса и закрывает её после"""
+    async with async_sessionmaker() as session:
+        yield session

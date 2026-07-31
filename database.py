@@ -6,7 +6,8 @@ from config import settings
 from repositories.product_repository import ProductRepository
 from services.product_service import ProductService
 
-
+from sqlalchemy.ext.asyncio import AsyncSession
+from create_db import get_db_session
 
 # Эта функция будет вызываться один раз при старте приложения
 async def connect_to_db(app):
@@ -79,7 +80,7 @@ def get_pool(request: Request) -> asyncpg.Pool:
 async def get_product_service(
     request: Request,
     background_tasks: BackgroundTasks,
-    pool: asyncpg.Pool = Depends(get_pool) 
+    session: AsyncSession = Depends(get_db_session)
 ) -> ProductService:
     '''
     Эта функция собирает наш Сервис как конструктор и выдаёт его роутеру
@@ -90,7 +91,7 @@ async def get_product_service(
     redis = getattr(request.app.state, 'redis', None)
 
     # 2 Инициализация репозитория передавая ему пул БД
-    repo = ProductRepository(pool)
+    repo = ProductRepository(session)
 
     return ProductService(
         repository=repo,
