@@ -4,14 +4,14 @@ import json
 
 # Импортируем наш репозиторий
 from repositories.product_repository import ProductRepository
+from s3_service import s3_client
 
 class ProductService:
-    def __init__(self, repository: ProductRepository, redis=None, background_tasks=None, manager=None, s3_service=None):
+    def __init__(self, repository: ProductRepository, redis=None, background_tasks=None, manager=None):
         self.repo = repository
         self.redis = redis
         self.background_tasks = background_tasks
         self.manager = manager
-        self.s3_service = s3_service
 
     async def _clear_cache(self, username: str):
         """Вспомогательный метод для очистки кэша юзера"""
@@ -50,10 +50,10 @@ class ProductService:
 
         # Превращаем объекты Record из базы в удобный список словарей
         products_data = jsonable_encoder(records)
-
+       
         for product in products_data:
             if product.get('image_url'):
-                full_url = await self.s3_service.get_presigned_url(product['image_url'])
+                full_url = await s3_client.get_presigned_url(product['image_url'])
                 product['full_image_url'] = full_url
         
         # 3. Сохраняем в кэш
@@ -67,7 +67,6 @@ class ProductService:
 
 
     async def get_product_by_id(self, product_id: int):
-
         records = await self.repo.get_by_id(product_id)
         return records
 
@@ -94,7 +93,7 @@ class ProductService:
         # 1 Сначала достаем товар для проверки права
         product = await self.repo.get_by_id(product_id)
         if product is None:
-            raise HTTPException(status_code=404, detail='Товарт не найден')
+            raise HTTPException(status_code=404, detail='Товар не найден')
         
         # Проверка что только владелец может удалить свой товар
         if product['owner_username'] != username:
@@ -109,7 +108,7 @@ class ProductService:
         await self._clear_cache(username)
 
 
-    async def update_product(self, username: str, product_id: int, name: str | None, price: float | None):
+    async def update_product(self, username: str, product_id: int, name: str | None = None, price: float | None = None, image_url: str | None = None):
         # 1 Проверка прав 
         product = await self.repo.get_by_id(product_id)
         if not product:
@@ -119,7 +118,7 @@ class ProductService:
             raise HTTPException(status_code=403, detail='Нельзя редактировать чужой продукт')
         
         # 2 Обновляю в БД через репозиторий
-        updated_product = await self.repo.update(product_id, name, price)
+        updated_product = await self.repo.update(product_id, name, price, image_url)
 
         # 3 Уведомление и очистка кеша
         if self.background_tasks and self.manager:

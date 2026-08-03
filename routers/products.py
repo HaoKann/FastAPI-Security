@@ -7,10 +7,8 @@ from pydantic import BaseModel, Field, field_validator, computed_field
 from auth import get_current_user
 from database import get_product_service
 from services.product_service import ProductService
-
 from s3_service import s3_client
-import asyncpg
-from database import get_pool
+
 
 # Создаем APIRouter для этого модуля
 router = APIRouter(
@@ -84,14 +82,11 @@ async def display_all_products(
     return await service.get_list_of_all_products(limit, offset)
 
 @router.get('/{product_id}', response_model=Product)
-async def get_product(product_id: int, pool: asyncpg.Pool = Depends(get_pool)):
-    async with pool.acquire() as conn: 
-        product = await conn.fetchrow("SELECT * FROM products WHERE id = $1", product_id)
+async def get_product(product_id: int, service: ProductService = Depends(get_product_service)):
+    product_dict = await service.get_product_by_id(product_id)
 
-    if not product:
+    if not product_dict:
         raise HTTPException(status_code=404, detail="Продукт не найден") 
-
-    product_dict = dict(product)
 
     if product_dict.get('image_url'):
         full_image_url = await s3_client.get_presigned_url(product_dict.get('image_url'))
@@ -147,16 +142,18 @@ async def update_product(
 async def add_photo(
     product_id: int,
     image: Annotated[UploadFile, File(...)],
-    pool: asyncpg.Pool = Depends(get_pool)
+    current_user: dict = Depends(get_current_user),
+    service: ProductService = Depends(get_product_service)
 ):
     filename = await s3_client.upload_file(file=image)
     
-    async with pool.acquire() as conn:
-        new_photo = await conn.fetchrow("UPDATE products SET image_url = $1 WHERE id = $2 RETURNING *",
-                            filename, product_id
+    updated_product = await service.update_product(
+        username=current_user['username'],
+        product_id=product_id,
+        image_url=filename
     )
         
-    if not new_photo:   
+    if not updated_product:   
         raise HTTPException(status_code=404, detail="Продукт не найден")
 
-    return dict(new_photo)
+    return updated_product

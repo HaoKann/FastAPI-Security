@@ -55,16 +55,18 @@ class ProductRepository:
         stmt = (
             insert(Product)
             .values(name=name, price=price, owner_username=username, creator_username=creator_username)
-            .returning(Product)
+            .returning(Product.id)
         )
         result = await self.db.execute(stmt)
-        product = result.scalar_one_or_none()
+        product_id = result.scalar_one_or_none()
         
         # Для сохранения нужно сделать commit
         await self.db.commit()
         
-        return self._to_dict_(product) if product else None
-        
+        # Достаем полный объект со всеми связями 
+        if product_id:
+            return await self.get_by_id(product_id)
+        return None
     
     async def get_by_id(self, product_id: int):
         stmt = (
@@ -84,7 +86,7 @@ class ProductRepository:
         await self.db.commit()
         
 
-    async def update(self, product_id: int, name: str | None, price: float | None):
+    async def update(self, product_id: int, name: str | None = None, price: float | None = None, image_url: str | None = None):
         # Подготавливаем словарь только с теми значениями, которые не None
         update_data = {}
         if name is not None:
@@ -93,31 +95,38 @@ class ProductRepository:
         if price is not None:
             update_data['price'] = price
             
+        if image_url is not None:
+            update_data['image_url'] = image_url
+        
         if not update_data:
-            return None # Нечего обновлять
+            return await self.get_by_id(product_id) # Если нечего обновлять, просто возвращаем товар
         
         stmt = (
             update(Product)
             .where(Product.id == product_id)
             .values(**update_data)
-            .returning(Product)
+            .returning(Product.id)
         )
         result = await self.db.execute(stmt)
-        product = result.scalar_one_or_none()
+        updated_id = result.scalar_one_or_none()
+        
         await self.db.commit()
         
-        return self._to_dict_(product) if product else None
-        
+        if updated_id:
+            return await self.get_by_id(updated_id)
+        return None        
     
     async def transfer_product_ownership(self, username: str, product_id: int):
         stmt = (
             update(Product)
             .where(Product.id == product_id)
             .values(owner_username=username)
-            .returning(Product)
+            .returning(Product.id)
         )
         result = await self.db.execute(stmt)
-        product = result.scalar_one_or_none()
+        updated_id = result.scalar_one_or_none()
         await self.db.commit()
         
-        return self._to_dict_(product) if product else None
+        if updated_id:
+            return await self.get_by_id(updated_id)
+        return None
