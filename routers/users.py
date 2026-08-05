@@ -1,8 +1,12 @@
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from s3_service import s3_client
 from auth import get_current_user
-from database import get_pool
 from typing import Annotated
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import update
+from database import get_db_session
+from models import User
 
 router = APIRouter(tags=['Users'])
 
@@ -10,7 +14,7 @@ router = APIRouter(tags=['Users'])
 async def update_avatar(
     file: Annotated[UploadFile, File(...)],
     current_user: dict = Depends(get_current_user), # Требуем, чтобы пользователь был залогинен
-    pool = Depends(get_pool) #  Подключаемся к базе
+    db: AsyncSession = Depends(get_db_session) # Подключаемся к базе через SQLAlchemy
 ):
     # 1. Проверяем формат файла (только картинки)
     if not file.content_type or not file.content_type.startswith('image/'):
@@ -25,19 +29,21 @@ async def update_avatar(
     except Exception as e:
         print(f"⚠️ Ошибка загрузки в S3: {e}")
         # Возвращаем красивую ошибку фронтенду, а не 500 Internal Server Error
-        return HTTPException(status_code=503, detail='Сервис хранения картинок сейчас недоступен. Попробуйте позже')
+        raise HTTPException(status_code=503, detail='Сервис хранения картинок сейчас недоступен. Попробуйте позже')
     
     # Берем username из словаря current_user
     username = current_user['username']
     
-    # 3. Записываем ссылку в базу данных
-    # Используем $1, $2 для защиты от SQL-инъекций
-    async with pool.acquire() as conn:
-        await conn.execute(
-            "UPDATE users SET avatar_url = $1 WHERE username = $2",
-            avatar_url,
-            username
-        )
+    # 3. Записываем ссылку в базу данных с помощью SQLAlchemy
+    stmt = (
+        update(User)
+        .where(User.username == username)
+        .values(avatar_url=avatar_url)
+    )
+    
+    await db.execute(stmt)
+    
+    await db.commit()
 
     return {
         "message": "Avatar updated successfully",

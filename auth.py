@@ -1,16 +1,18 @@
 # auth.py
 from datetime import datetime, timedelta, UTC
 import os
-import asyncpg
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status, APIRouter
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, OAuth2PasswordRequestForm
-from database import get_pool # Импортируем нашу зависимость для пула БД
 from pydantic import BaseModel, Field
 from typing import Optional
 from s3_service import s3_client
 
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from create_db import get_db_session
+from models import User
 
 # --- 1. Настройки и объекты ---
 # Загружаем переменные из .env, предоставляя значения по умолчанию для безопасности
@@ -58,7 +60,6 @@ def get_password_hash(password: str) -> str:
 # Она больше не лезет в БД и использует datetime-объекты напрямую, что решает ошибку "Signature has expired".
 def create_tokens(data: dict) -> dict:
     """Создает новую пару access и refresh токенов."""
-    
     # Создаем access token
     to_encode_access = data.copy()
     expire_access = datetime.now(UTC) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -73,19 +74,30 @@ def create_tokens(data: dict) -> dict:
     
     return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
 
-# --- НОВАЯ ФУНКЦИЯ-ПОМОЩНИК ---
-async def get_user_from_db(pool: asyncpg.Pool, username: str) -> dict | None:
+
+# --- НОВАЯ ФУНКЦИЯ-ПОМОЩНИК НА SQLALCHEMY ---
+async def get_user_from_db(db: AsyncSession, username: str) -> dict | None:
     """Получает пользователя из БД. Возвращает None в тестовом режиме."""
-    print(f"get_user_from_db вызван, pool={type(pool)}, username={username}")
+    print(f"get_user_from_db вызван, db={type(db)}, username={username}")
 
     # КРИТИЧЕСКИ ВАЖНО: Проверка на None для тестового режима
-    if pool is None:
+    if db is None:
         print("TESTING mode: returning None from get_user_from_db")
         return None
 
-    async with pool.acquire() as conn:
-        user = await conn.fetchrow('SELECT username, hashed_password, avatar_url FROM users WHERE username = $1 ', username)
-    return dict(user) if user else None
+    # Делаем запрос через SQLAlchemy
+    stmt = select(User).where(User.username == username)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    
+    # Чтобы не ломать старый код, отдаем данные в виде словаря
+    if user:
+        return {
+            'username' : user.username,
+            'hashed_password': user.hashed_password,
+            'avatar_url': user.avatar_url
+        }
+    return None
 
 
 # --- 4. Зависимость для получения текущего пользователя ---
@@ -93,7 +105,7 @@ async def get_user_from_db(pool: asyncpg.Pool, username: str) -> dict | None:
 # ИСПРАВЛЕНО: Функция теперь зависит от HTTPBearer
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    pool: asyncpg.Pool = Depends(get_pool) #  1. Даем функции доступ к БД
+    db: AsyncSession = Depends(get_db_session) #  1. Даем функции доступ к БД
 ) -> dict:
     
     credentials_exception = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentioals")
@@ -111,7 +123,7 @@ async def get_current_user(
         raise credentials_exception
 
     # 👇 2. Идем в базу данных за ПОЛНЫМИ данными пользователя
-    user = await get_user_from_db(pool, username)
+    user = await get_user_from_db(db, username)
     if user is None:
         raise credentials_exception
 
@@ -126,20 +138,19 @@ async def get_current_user(
 # Затем выдаёт токены.
 @router.post('/register', response_model=Token)
 # user_in: UserCreate — объект, созданный из JSON-запроса (например, {"username": "alice", "password": "password123"}).
-async def register(user_in: UserCreate, pool: asyncpg.Pool = Depends(get_pool)):
+async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db_session)):
     try:
         # Асинхронно проверяет наличие пользователя.
-        if await get_user_from_db(pool, user_in.username):
+        if await get_user_from_db(db, user_in.username):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Пользователь с таким именем уже существует')
         
         hashed_password = get_password_hash(user_in.password)
 
-        # Использует асинхронное соединение для записи.
-        async with pool.acquire() as conn:
-            await conn.execute(
-                'INSERT INTO users (username, hashed_password) VALUES ($1, $2)',
-                user_in.username, hashed_password
-            )
+        # Создаем нового пользователя через SQLAlchemy
+        new_user = User(username=user_in.username, hashed_password=hashed_password)
+        db.add(new_user)
+        await db.commit()
+        
                 
         return create_tokens(data={'sub': user_in.username})
     except Exception as e:
@@ -149,9 +160,9 @@ async def register(user_in: UserCreate, pool: asyncpg.Pool = Depends(get_pool)):
 
 # Эндпоинт для получения токена
 @router.post("/login", response_model=Token)
-async def login_for_token(form_data: OAuth2PasswordRequestForm = Depends(), pool: asyncpg.Pool = Depends(get_pool)):
+async def login_for_token(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db_session)):
     """Выдает access и refresh токены для пользователя."""
-    user = await get_user_from_db(pool, form_data.username)
+    user = await get_user_from_db(db, form_data.username)
 
     if not user or not verify_password(form_data.password, user["hashed_password"]):
         raise HTTPException(

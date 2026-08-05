@@ -68,13 +68,6 @@ async def close_db_connection(app):
     await app.state.pool.close()
     print('Database connection pool closed')
 
-# Это зависимость (Dependency)
-# Любой эндпоинт сможет запросить её для получания доступа к пулу
-def get_pool(request: Request) -> asyncpg.Pool:
-    # Зависимость для получения пула соединений в эндпоинтах.
-    # FastAPI автоматически передаст сюда объект 'request', из которого можно получить доступ к app.state.pool
-    return request.app.state.pool
-
 
 # Dependency Injection 
 async def get_product_service(

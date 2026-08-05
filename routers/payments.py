@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from sqlalchemy.ext.asyncio import AsyncSession
-from database import get_pool
+from create_db import get_db_session
 from auth import get_current_user
 from repositories.product_repository import ProductRepository
 from services.product_service import ProductService 
@@ -19,8 +19,8 @@ router = APIRouter(prefix='/payment', tags=['Платежи'])
 @router.post('/checkout/{product_id}')
 async def buy_products(
     product_id: int,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_pool)
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
 ):
     # 1. Инициализируем репозиторий
     product_repo = ProductRepository(db)
@@ -58,7 +58,7 @@ async def payment_cancel(request: Request):
 async def stripe_webhook(
     request: Request, 
     stripe_signature: str = Header(None), 
-    db: AsyncSession = Depends(get_pool)
+    db: AsyncSession = Depends(get_db_session)
 ):
     # Инициализируем сервис
     product_repo = ProductRepository(db)
@@ -89,23 +89,27 @@ async def stripe_webhook(
         product_id = int(metadata['product_id'])
         buyer_username = metadata['username']
 
-        # Достаем email покупателя безопасно
-        customer_details = session['customer_details']        
-        buyer_email = customer_details['email'] if customer_details else None
+        # БЕЗОПАСНОЕ извлечение email покупателя с помощью .get()
+        customer_details = session.get('customer_details')        
+        buyer_email = customer_details.get('email') if customer_details else None
 
         print(f"✅ Пользователь {buyer_username} купил товар {product_id}")
         
         product_info = await product_service.get_product_by_id(product_id)
-        previous_owner = product_info['owner_username']
-
-        # 1. Отправляем уведомление продавцу (WebSockets)
-        await manager.send_personal_message(
-            message=f"Ваш товар {product_info['name']} был куплен {buyer_username}", 
-            username=previous_owner
-        )
+        
+        # БЕЗОПАСНАЯ проверка: делаем действия, только если товар реально существует
+        if product_info:
+            previous_owner = product_info.get('owner_username')
+            
+            # 1. Отправляем уведомление бывшему продавцу по WebSockets
+            if previous_owner:
+                await manager.send_personal_message(
+                    message=f"Ваш товар {product_info['name']} был куплен {buyer_username}", 
+                    username=previous_owner
+                )
 
         # 2. Меняем владельца в БД
-        await product_service.change_product_ownership(metadata['username'], int(metadata['product_id']) )
+        await product_service.change_product_ownership(buyer_username, product_id)
         
         # 3. Отправляем фоновую задачу на email (Celery)
         if buyer_email:
