@@ -98,22 +98,12 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. Create database tables
+### 3. Apply database migrations
 
-```sql
-CREATE TABLE users (
-    username VARCHAR(50) PRIMARY KEY,
-    hashed_password VARCHAR(255) NOT NULL,
-    avatar_url VARCHAR(255)
-);
+Instead of manual SQL scripts, we use Alembic to manage database schema changes.
 
-CREATE TABLE products (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    price NUMERIC(10, 2) NOT NULL,
-    owner_username VARCHAR(50) REFERENCES users(username) ON DELETE CASCADE
-);
-```
+```bash
+alembic upgrade head
 
 ### 4. Run server
 

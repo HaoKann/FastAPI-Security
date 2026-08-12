@@ -1,9 +1,10 @@
 # WebSocket, WebSocketDisconnect — добавляет поддержку WebSocket-протокола и обработку разрыва соединения.
 from fastapi import WebSocket, WebSocketDisconnect, APIRouter, Query, status
 from typing import Optional
-import asyncpg
 from jose import jwt, JWTError
 from auth import SECRET_KEY, ALGORITHM, get_user_from_db
+from create_db import async_session_maker
+
 
 # Создаем APIRouter. Все эндпоинты в этом файле будут привязаны к нему.
 router = APIRouter(
@@ -70,9 +71,6 @@ async def websocket_notification(
     token: str = Query(...)
 ):
     try:
-        # Достаем пул напрямую из состояния приложения
-        pool: asyncpg.Pool = websocket.app.state.pool
-
         username: Optional[str] = None
 
         try:
@@ -86,9 +84,16 @@ async def websocket_notification(
             username = payload.get('sub')
             # Мы закрываем соединение, если имя пользователя не найдено ИЛИ
             # если функция get_user_from_db вернула None (т.е. not await...).
-            if not username or not await get_user_from_db(pool, username):
+            if not username:
                 await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason='User not found')
                 return
+            
+            # --- ИЗМЕНЕНО: Открываем БД только для проверки юзера ---
+            async with async_session_maker() as db:
+                user = await get_user_from_db(db, username)
+                if not user:
+                    await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="User not found")
+                    return
             
         except JWTError:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason='Invalid or expired token')
@@ -122,12 +127,6 @@ async def websocket_chat(
     websocket: WebSocket,
     token: str = Query(...)
 ):
-    # ИСПРАВЛЕНО: Получаем пул напрямую из websocket
-    pool: asyncpg.Pool = websocket.app.state.pool
-    """
-    Эндпоинт для интерактивного чата.
-    Клиент подключается, может отправлять и получать сообщения.
-    """
     username: Optional[str] = None
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -136,9 +135,16 @@ async def websocket_chat(
             return
         
         username = payload.get('sub')
-        if not username or not await get_user_from_db(pool, username):
+        if not username:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
+        
+        # --- ИЗМЕНЕНО: Открываем БД только для проверки юзера ---
+        async with async_session_maker() as db:
+            user = await get_user_from_db(db, username)
+            if not user:
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
         
     except JWTError:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -157,19 +163,11 @@ async def websocket_chat(
 
 
             
-# Устанавливает WebSocket-соединение, проверяет токен и обрабатывает сообщения.
-# Зачем: Создаёт чат и уведомления в реальном времени.
-# @app.websocket(WebSocket-роут) нужен для создания постоянного соединения
-# Создан для уведомлений о завершении фоновых задач (например, compute_factorial_async или compute_sum_range)
 @router.websocket("/ws/products")
-# websocket: WebSocket — объект соединения
-# token: str = Query(...) — токен авторизации, переданный как параметр запроса (обязательный, так как ... указывает на это).
 async def websocket_products(websocket: WebSocket, token: str = Query(...) ):
     # Объявляет переменную username, которая может быть None (опциональный тип), для хранения имени пользователя
     username: Optional[str] = None
     try:
-        pool: asyncpg.Pool = websocket.app.state.pool
-
         # Шаг 1: Декодируем токен
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         
@@ -182,9 +180,15 @@ async def websocket_products(websocket: WebSocket, token: str = Query(...) ):
 
         username = payload.get("sub")
         # Шаг 3: Проверяет, что username существует и пользователь найден в базе. Если нет, закрывает соединение.
-        if username is None or await get_user_from_db (pool, username) is None:
+        if not username:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="User not found")
             return
+        
+        async with async_session_maker() as db:
+            user = await get_user_from_db(db, username)
+            if not user:
+                await websocket.close(status.WS_1008_POLICY_VIOLATION, reason="User not found")
+                return
         
     # Ловит ошибки декодирования токена (например, истёкший или неверный токен).
     except JWTError:

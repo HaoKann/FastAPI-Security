@@ -75,6 +75,13 @@ def client(db_session):
     # Говорим FastAPI использовать нашу тестовую сессию вместо боевой
     app.dependency_overrides[get_db_session] = override_get_db
     
+    import graphql_app.schema
+    graphql_app.schema.async_session_maker = TestingSessionLocal
+    
+    
+    import websocket
+    websocket.async_session_maker = TestingSessionLocal
+    
     # Очищаем соединения вебсокетов перед тестом
     manager.active_connections = {}
 

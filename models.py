@@ -6,7 +6,6 @@ class Base(DeclarativeBase):
     pass
 
 # --- Модель таблицы Users ---
-# Раньше было: CREATE TABLE users (id SERIAL PRIMARY KEY, ...)
 class User(Base):
     __tablename__ = 'users'
 
@@ -15,11 +14,13 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     avatar_url = Column(String, nullable=True)
     
+    # Новое поле для ролевой модели. По умолчанию все становятся обычными пользователями
+    role = Column(String, default='user')
+    
     products = relationship('Product', back_populates='owner')
     
 
 # --- Модель таблицы Products ---
-# Раньше было: CREATE TABLE products (...)
 class Product(Base):
     __tablename__ = 'products'
 

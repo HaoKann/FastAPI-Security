@@ -47,26 +47,6 @@ import json
 import asyncio
 from websocket import manager
 
-# Logging
-# import logging
-# from pythonjsonlogger import jsonlogger
-
-# # Настраиваем формат логов
-# logHandler = logging.StreamHandler()
-# formatter = jsonlogger.JsonFormatter(
-#     '%(timestamp)s %(level)s %(name)s %(message)s',
-#     timestamp = True
-# )
-# logHandler.setFormatter(formatter)
-
-# # Применяем настройки к основному логгеру
-# logger = logging.getLogger()
-# logger.addHandler(logHandler)
-# logger.setLevel(logging.INFO)
-
-# # Убираем стандартные обработчики, чтобы не было дублей
-# logger.propagate = False
-
 
 async def listen_to_redis():
     """Фоновая задача FastAPI для прослушивания канала Redis"""

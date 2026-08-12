@@ -3,6 +3,10 @@ from strawberry.types import Info
 from typing import Optional, List
 from graphql_app.auth import authenticate_user
 
+# # Импорт SQLAlchemy
+from create_db import async_session_maker
+from sqlalchemy import select
+from models import Product
 
 # --- Создаем "Слепок" товара (ProductType) ---
 # Это то, как товар будет выглядеть для GraphQL.
@@ -20,87 +24,78 @@ class ProductType:
 # ЧТЕНИЕ
 # info: Info — это специальный параметр Strawberry, в нем лежит объект запроса
 async def get_products(info: Info) -> List[ProductType]:
-    # 1. Достаем объект request из контекста Strawberry
-    request = info.context['request']
-
-    # 2. Через request добираемся до пула соединений с БД
-    pool = request.app.state.pool
-
-    if not pool:
-        raise Exception("Нет подключения к БД!")
-    
-    # 3. Делаем SQL-запрос
-    async with pool.acquire() as connection:
-        # Выбираем только те поля, которые нужны нашему ProductType
-        query = "SELECT id, name, description, price FROM products"
-        rows = await connection.fetch(query)
-
-        # 4. Превращаем "сырые" строки БД в красивые объекты ProductType
+    # Открываем сессию SQLAlchemy вместо старого пула
+    async with async_session_maker() as db:
+        # Безопасный запрос через SQLAlchemy
+        result = await db.execute(select(Product))
+        products = result.scalars.all()
+        
+        # Превращаем объекты базы данных в красивые объекты ProductType
         return [
             ProductType(
-                id=row["id"],
-                name=row["name"],
-                description=row["description"],
-                price=row["price"]
+                id = p.id,
+                name=p.name,
+                price=p.price,
+                description=p.description
             )
-            for row in rows
+            for p in products
         ]
 
 
 # ЧТЕНИЕ ОДНОГО ТОВАРА
-# Обрати внимание: возвращаем Optional[ProductType], так как товара может и не быть
+# Взвращаем Optional[ProductType], так как товара может и не быть
 async def get_product(info: Info, product_id: int) -> Optional[ProductType]:
-    request = info.context['request']
-    pool = request.app.state.pool
-
-    if not pool:
-        raise Exception("Нет подключения к БД!")
-
-    async with pool.acquire() as connection:
-        # Используем WHERE id = $1
-        query = "SELECT id, name, description, price FROM products WHERE id = $1"
-        row = await connection.fetchrow(query, product_id)
-
-        if row:
-            return ProductType(
-                id=row["id"],
-                name=row["name"],
-                description=row["description"],
-                price=row["price"]
-            )
-        else:
-            return None # Если не нашли, возвращаем null
-
-
-# ЗАПИСЬ (ТЕПЕРЬ ЗАЩИЩЕНА 🔒)   
+    async with async_session_maker() as db:
+        # Ищем товар по ID
+        result = await db.execute(select(Product).where(Product.id==product_id))
+        p = result.scalar_one_or_none()
+        
+        if p:
+            return [
+                ProductType(
+                    id=p.id,
+                    name=p.name,
+                    price=p.price,
+                    description=p.description
+                )
+            ]
+        return None
+    
+        
+# ЗАПИСЬ (СОЗДАНИЕ ТОВАРА)
 async def create_product(info: Info, name: str, price: int, description: Optional[str] = None) -> ProductType:
     request = info.context['request']
 
     # --- ПРОВЕРКА БЕЗОПАСНОСТИ ---
     # Если токена нет или он кривой — тут вылетит ошибка, и код ниже не сработает
     user = authenticate_user(request)
+    
+    # БЕЗОПАСНОЕ ИЗВЛЕЧЕНИЕ: если user это словарь - берем 'username', если строка - берем как есть
+    username = user['username'] if isinstance(user, dict) else user
     print(f"Запрос выполнил пользователь: {user}")
    
-    pool = request.app.state.pool
-
-    if not pool:
-       raise Exception('Нет подключения к БД!')
-
-    async with pool.acquire() as connection:
-        # Мы делаем INSERT и сразу просим вернуть ID созданной строки (RETURNING id)
-        # Это фишка PostgreSQL, чтобы не делать два запроса.
-        query = """
-            INSERT INTO products (name, description, price)
-            VALUES ($1, $2, $3)
-            RETURNING id
-        """
-        # Используем fetchrow, так как ожидаем ровно одну строку ответа (id)
-        row = await connection.fetchrow(query, name, description, price)
-        new_id = row['id']
-
-        # Возвращаем созданный объект, чтобы клиент сразу увидел его ID
-        return ProductType(id=new_id, name=name, description=description, price=price)
+    async with async_session_maker() as db:
+        # Создаем объект товара (привязываем его к текущему пользователю)
+        new_product = Product(
+            name=name,
+            price=price,
+            description=description,
+            creator_username=username,
+            owner_username=username
+        )
         
+        db.add(new_product)
+        await db.commit()
+        # Обновляем объект, чтобы база данных вернула нам сгенерированный ID
+        await db.refresh(new_product)
+        
+        # Возвращаем созданный объект для GraphQL
+        return ProductType(
+            id=new_product.id,
+            price=new_product.price,
+            description=new_product.description,
+            name=new_product.name
+        )        
 
 # --- 3. Структура API ---
 

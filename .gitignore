@@ -40,3 +40,5 @@ ENV/
 Thumbs.db
 
 gunicorn.ctl
+
+roadmap.md

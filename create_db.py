@@ -14,5 +14,5 @@ async_session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_
 # Функция-зависимость для FastAPI
 async def get_db_session():
     """Выдает одну сессию БД для конкретного запроса и закрывает её после"""
-    async with async_sessionmaker() as session:
+    async with async_session_maker() as session:
         yield session

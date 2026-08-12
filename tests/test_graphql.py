@@ -3,7 +3,7 @@ import pytest
 # 1. Тест публичного запроса (Query)
 # Используем фикстуру ac (AsyncClient) из твоего conftest.py
 @pytest.mark.asyncio
-async def test_grapql_hello(ac, db_pool):
+async def test_grapql_hello(ac, db_session):
     # Формируем GraphQL запрос
     query = """
     query {
@@ -20,7 +20,7 @@ async def test_grapql_hello(ac, db_pool):
 
 # 2. Тест создания товара БЕЗ токена (Должен провалиться)
 @pytest.mark.asyncio
-async def test_create_product_unauthorized(ac, db_pool):
+async def test_create_product_unauthorized(ac, db_session):
     mutation = """
     mutation {
         addProduct(name: "Hacker Item", price: 0, description: "Hack") {
@@ -42,7 +42,7 @@ async def test_create_product_unauthorized(ac, db_pool):
 
 # 3. Тест создания товара С токеном (Должен пройти)
 @pytest.mark.asyncio
-async def test_create_product_authorized(ac, db_pool, auth_headers): # auth_headers возьмем из фикстуры (conftest.py)
+async def test_create_product_authorized(ac, db_session, auth_headers): # auth_headers возьмем из фикстуры (conftest.py)
     mutation = """
     mutation {
         addProduct(name: "Test Item", price: 100, description: "From Pytest") {
