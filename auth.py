@@ -45,7 +45,8 @@ class UserCreate(BaseModel):
 class UserOut(BaseModel):
     username: str
     avatar_url: Optional[str] = None
-
+    
+    
 # --- 3. Утилиты (без изменений) ---
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Проверяет, соответствует ли обычный пароль хешированному."""
@@ -95,7 +96,8 @@ async def get_user_from_db(db: AsyncSession, username: str) -> dict | None:
         return {
             'username' : user.username,
             'hashed_password': user.hashed_password,
-            'avatar_url': user.avatar_url
+            'avatar_url': user.avatar_url,
+            'role': user.role
         }
     return None
 
@@ -196,3 +198,24 @@ async def protected_route(current_user: dict = Depends(get_current_user)):
     # Мы ожидаем словарь (dict) и берем из него имя пользователя
     username = current_user['username']
     return {'message': f'Привет, {username}! Это защищенная зона'}
+
+
+
+# --- РОЛЕВАЯ МОДЕЛЬ (RBAC) ---
+class RoleChecker:
+    """Проверяет, есть ли у текущего пользователя нужная роль."""
+    def __init__(self, allowed_roles: list[str]):
+        self.allowed_roles = allowed_roles
+        
+    def __call__(self, current_user: dict = Depends(get_current_user)):
+        user_role = current_user.get('role', 'user')
+        
+        if user_role not in self.allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="У вас нет прав для выполнения этого действия"
+            )
+        return current_user
+
+# Создаем готовую зависимость для админов
+require_admin = RoleChecker(['admin'])

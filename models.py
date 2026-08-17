@@ -14,7 +14,7 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     avatar_url = Column(String, nullable=True)
     
-    # Новое поле для ролевой модели. По умолчанию все становятся обычными пользователями
+    # Новое поле для ролевой модели (RBAC). По умолчанию все становятся обычными пользователями
     role = Column(String, default='user')
     
     products = relationship('Product', back_populates='owner')

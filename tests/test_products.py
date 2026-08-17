@@ -99,31 +99,31 @@ def test_create_product_unauthenticated(client: TestClient):
  
 
 # --- Тест 5: Успешное удаление продукта ---
-def test_delete_product_success(client: TestClient, auth_headers: dict):
+def test_delete_product_success(client: TestClient, admin_auth_headers: dict):
     """Тест: Создаем продукт, удаляем его, проверяем что его нет."""
 
     # 1. Создаем продукт (чтобы было что удалять)
-    create_resp = client.post("/products", json={"name": "Temp", "price": 10}, headers=auth_headers)
+    create_resp = client.post("/products", json={"name": "Temp", "price": 10}, headers=admin_auth_headers)
     product_id = create_resp.json()["id"]
 
     # 2. Удаляем его
-    delete_resp = client.delete(f"/products/{product_id}", headers=auth_headers)
+    delete_resp = client.delete(f"/products/{product_id}", headers=admin_auth_headers)
 
     # 3. Ожидаем 204 No Content (успешное удаление)
     assert delete_resp.status_code == status.HTTP_204_NO_CONTENT
 
     # 4. Проверяем, что список продуктов теперь пуст (или этого продукта там нет)
-    get_resp = client.get("/products", headers=auth_headers)
+    get_resp = client.get("/products", headers=admin_auth_headers)
     products = get_resp.json()
     # Проверяем, что продукта с таким ID нет в списке
     assert not any(p['id'] == product_id for p in products)
 
 
 # --- Тест 6: Удаление несуществующего продукта ---
-def test_delete_product_not_found(client: TestClient, auth_headers: dict):
+def test_delete_product_not_found(client: TestClient, admin_auth_headers: dict):
     """Тест: Попытка удалить продукт с несуществующим id."""
     fake_id = 999999
-    delete_resp = client.delete(f"/products/{fake_id}", headers=auth_headers)
+    delete_resp = client.delete(f"/products/{fake_id}", headers=admin_auth_headers)
     assert delete_resp.status_code == status.HTTP_404_NOT_FOUND
 
 

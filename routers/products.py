@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, field_validator, computed_field
 
 
 # Импортируем зависимости из наших центральных модулей
-from auth import get_current_user
+from auth import get_current_user, require_admin
 from database import get_product_service
 from services.product_service import ProductService
 from s3_service import s3_client
@@ -112,8 +112,8 @@ async def create_product(
 @router.delete('/{product_id}', status_code=status.HTTP_204_NO_CONTENT)
 async def delete_product(
     product_id: int,
-    current_user: dict = Depends(get_current_user),
-    service: ProductService = Depends(get_product_service)
+    current_user: dict = Depends(require_admin),
+    service: ProductService = Depends(get_product_service),
 ):
     await service.delete_product(
         username=current_user['username'],
