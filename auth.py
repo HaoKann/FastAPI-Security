@@ -217,5 +217,8 @@ class RoleChecker:
             )
         return current_user
 
-# Создаем готовую зависимость для админов
+# Охранник только для админов (например, для панели управления)
 require_admin = RoleChecker(['admin'])
+
+# Охранник для продавцов и админов (для создания и управления товарами)
+require_seller = RoleChecker(['admin', 'seller'])

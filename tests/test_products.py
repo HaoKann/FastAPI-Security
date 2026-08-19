@@ -23,7 +23,7 @@ def test_get_products_empty(client: TestClient, auth_headers: dict):
 
 
 # --- Тест 2: Успешное создание продукта ---
-def test_create_product(client: TestClient, auth_headers: dict):
+def test_create_product(client: TestClient, seller_auth_headers: dict):
     """
     Тест: POST /products (успешное создание продукта)
     Проверяем, что пользователь может создать продукт.
@@ -35,7 +35,7 @@ def test_create_product(client: TestClient, auth_headers: dict):
     }
 
     # 2. Отправляем POST-запрос с данными (json=) и заголовком (headers=)
-    response = client.post("/products", json=product_data, headers=auth_headers)
+    response = client.post("/products", json=product_data, headers=seller_auth_headers)
 
     # 3. Проверяем, что сервер ответил "200 OK"
     assert response.status_code == status.HTTP_200_OK
@@ -47,11 +47,11 @@ def test_create_product(client: TestClient, auth_headers: dict):
     assert data["id"] is not None # Убеждаемся, что ID был присвоен
 
     # 5. Проверяем, что "владелец" - это наш 'test_user' из фикстуры
-    assert data["owner_username"] == "test_user"
+    assert data["owner_username"] == "test_seller"
 
 
 # --- Тест 3: Проверка получения списка после создания ---
-def test_get_products_after_creation(client: TestClient, auth_headers: dict):
+def test_get_products_after_creation(client: TestClient, seller_auth_headers: dict):
     """
     Тест: GET /products (после создания)
     Проверяем, что эндпоинт GET теперь возвращает продукт,
@@ -62,11 +62,11 @@ def test_get_products_after_creation(client: TestClient, auth_headers: dict):
         "name": "Ноутбук 'Shadow'",
         "price": 1200.00
     }
-    create_response = client.post("/products", json=product_data, headers=auth_headers)
+    create_response = client.post("/products", json=product_data, headers=seller_auth_headers)
     assert create_response.status_code == status.HTTP_200_OK
 
     # --- Шаг 2: Теперь запрашиваем список продуктов ---
-    get_response = client.get("/products", headers=auth_headers)
+    get_response = client.get("/products", headers=seller_auth_headers)
 
     # Проверяем, что все Ок
     assert get_response.status_code == status.HTTP_200_OK
@@ -75,7 +75,7 @@ def test_get_products_after_creation(client: TestClient, auth_headers: dict):
     data = get_response.json()
     assert len(data) == 1
     assert data[0]["name"] == "Ноутбук 'Shadow'"
-    assert data[0]["owner_username"] == "test_user"
+    assert data[0]["owner_username"] == "test_seller"
 
 
 
@@ -128,7 +128,7 @@ def test_delete_product_not_found(client: TestClient, admin_auth_headers: dict):
 
 
 # --- Тест 7: Попытка удалить чужой продукт ---
-def test_delete_others_product_forbidden(client: TestClient, auth_headers: dict):
+def test_delete_others_product_forbidden(client: TestClient, seller_auth_headers: dict):
     """
     Тест безопасности:
     1. User1 создает продукт.
@@ -137,7 +137,7 @@ def test_delete_others_product_forbidden(client: TestClient, auth_headers: dict)
     """
 
     # 1. User1 (auth_headers) создает продукт
-    create_resp = client.post('/products', json={"name": "My precious", "price": 100}, headers=auth_headers)
+    create_resp = client.post('/products', json={"name": "My precious", "price": 100}, headers=seller_auth_headers)
     product_id = create_resp.json()["id"]
 
     # 2. Регистрируем ВТОРОГО пользователя ('thief')
@@ -157,34 +157,34 @@ def test_delete_others_product_forbidden(client: TestClient, auth_headers: dict)
 
 
 # --- Тест 8: Успешное обновление продукта ---
-def test_update_product_success(client: TestClient, auth_headers: dict):
+def test_update_product_success(client: TestClient, seller_auth_headers: dict):
     """Тест: Создаем продукт, обновляем его цену, проверяем."""
 
     # 1. Создаем продукт "Старый телефон" за 100
-    create_resp = client.post("/products", json={"name": "Old phone", "price": 100.00}, headers=auth_headers)
+    create_resp = client.post("/products", json={"name": "Old phone", "price": 100.00}, headers=seller_auth_headers)
     product_id = create_resp.json()['id']
 
     # 2. Обновляем цену (меняем на 500) и имя
     update_data = {"name": "New Phone", "price": 500.0}
-    update_resp = client.put(f"/products/{product_id}", json=update_data, headers=auth_headers)
+    update_resp = client.put(f"/products/{product_id}", json=update_data, headers=seller_auth_headers)
 
     assert update_resp.status_code == status.HTTP_200_OK
     assert update_resp.json()["name"] == "New Phone"
     assert update_resp.json()["price"] == 500.00
 
     # 3. Проверяем через GET, что в базе данные реально изменились
-    get_resp = client.get('/products', headers=auth_headers)
+    get_resp = client.get('/products', headers=seller_auth_headers)
     product_in_list = get_resp.json()[0] # Берем первый (и единственный) продукт
     assert product_in_list["name"] == "New Phone"
     assert product_in_list["price"] == 500.00
 
 
 # --- Тест 9: Попытка обновить чужой продукт ---
-def test_update_others_product_forbidden(client: TestClient, auth_headers: dict):
+def test_update_others_product_forbidden(client: TestClient, seller_auth_headers: dict):
     """Тест: Вор пытается изменить цену нашего продукта."""
 
     # 1. Честный юзер создает продукт
-    create_resp = client.post('/products', json={"name": "Gold Bar", "price": 1000.0}, headers=auth_headers)
+    create_resp = client.post('/products', json={"name": "Gold Bar", "price": 1000.0}, headers=seller_auth_headers)
     product_id = create_resp.json()["id"]
 
     # 2. Регистрируем и логиним вора
@@ -198,3 +198,15 @@ def test_update_others_product_forbidden(client: TestClient, auth_headers: dict)
 
     assert update_resp.status_code == status.HTTP_403_FORBIDDEN
 
+def test_delete_products_by_regular_user_forbidden(client: TestClient, auth_headers: dict):
+    fake_product_id = 999
+    delete_resp = client.delete(f'/products/{fake_product_id}', headers=auth_headers)
+    
+    assert delete_resp.status_code == status.HTTP_403_FORBIDDEN
+    
+    
+def test_update_products_by_regular_user_forbidden(client: TestClient, auth_headers: dict):
+    fake_product_id = 999
+    update_resp = client.put(f'/products/{fake_product_id}', headers=auth_headers)
+    
+    assert update_resp.status_code == status.HTTP_403_FORBIDDEN

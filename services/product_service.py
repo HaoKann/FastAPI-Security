@@ -89,14 +89,14 @@ class ProductService:
         return new_product
     
 
-    async def delete_product(self, username: str, product_id: int):
+    async def delete_product(self, username: str, product_id: int, role: str):
         # 1 Сначала достаем товар для проверки права
         product = await self.repo.get_by_id(product_id)
         if product is None:
             raise HTTPException(status_code=404, detail='Товар не найден')
         
-        # Проверка что только владелец может удалить свой товар
-        if product['owner_username'] != username:
+        # Проверка что только владелец может удалить свой товар и роль 
+        if product['owner_username'] != username and role != 'admin':
             raise HTTPException(status_code=403, detail='Вы не можете удалить чужой товар')
         
         # 2 Удаляем через репозиторий
@@ -108,13 +108,13 @@ class ProductService:
         await self._clear_cache(username)
 
 
-    async def update_product(self, username: str, product_id: int, name: str | None = None, price: float | None = None, image_url: str | None = None):
+    async def update_product(self, username: str, role: str, product_id: int, name: str | None = None, price: float | None = None, image_url: str | None = None):
         # 1 Проверка прав 
         product = await self.repo.get_by_id(product_id)
         if not product:
             raise HTTPException(status_code=404, detail='Продукт не найден')
         
-        if product['owner_username'] != username:
+        if product['owner_username'] != username and role != 'admin':
             raise HTTPException(status_code=403, detail='Нельзя редактировать чужой продукт')
         
         # 2 Обновляю в БД через репозиторий

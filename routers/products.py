@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, field_validator, computed_field
 
 
 # Импортируем зависимости из наших центральных модулей
-from auth import get_current_user, require_admin
+from auth import get_current_user, require_admin, require_seller
 from database import get_product_service
 from services.product_service import ProductService
 from s3_service import s3_client
@@ -99,7 +99,7 @@ async def get_product(product_id: int, service: ProductService = Depends(get_pro
 @router.post('/', response_model=Product)
 async def create_product(
     product_data: ProductCreate, 
-    current_user: dict = Depends(get_current_user), 
+    current_user: dict = Depends(require_seller), 
     service: ProductService = Depends(get_product_service)
 ):
     return await service.create_product(
@@ -112,11 +112,12 @@ async def create_product(
 @router.delete('/{product_id}', status_code=status.HTTP_204_NO_CONTENT)
 async def delete_product(
     product_id: int,
-    current_user: dict = Depends(require_admin),
+    current_user: dict = Depends(require_seller),
     service: ProductService = Depends(get_product_service),
 ):
     await service.delete_product(
         username=current_user['username'],
+        role=current_user['role'],
         product_id=product_id
     )
     return
@@ -127,7 +128,7 @@ async def delete_product(
 async def update_product(
     product_id: int,
     products_update: ProductUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_seller),
     service: ProductService = Depends(get_product_service)
 ):
     return await service.update_product(
@@ -142,7 +143,7 @@ async def update_product(
 async def add_photo(
     product_id: int,
     image: Annotated[UploadFile, File(...)],
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_seller),
     service: ProductService = Depends(get_product_service)
 ):
     filename = await s3_client.upload_file(file=image)

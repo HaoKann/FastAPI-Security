@@ -167,6 +167,47 @@ async def admin_auth_headers(client: TestClient, db_session: AsyncSession):
     }
     
     yield headers
+    
+@pytest.fixture(scope="function")
+async def seller_auth_headers(client: TestClient, db_session: AsyncSession):
+    """
+    Регистрирует тестового продавца, меняет ему роль в БД и возвращает заголовки с токеном.
+    """
+    # Шаг 1: Регистрируем пользователя
+    user_data = {
+        "username": "test_seller",
+        "password": "strongadminpassword123"
+    }
+    response_register = client.post('/auth/register', json=user_data)
+    assert response_register.status_code == status.HTTP_200_OK
+    
+    # Шаг 2: Делаем его админом напрямую в базе данных
+    from sqlalchemy import select
+    from models import User
+    
+    stmt = select(User).where(User.username == 'test_seller')
+    result = await db_session.execute(stmt)
+    seller = result.scalar_one_or_none()
+    
+    if seller:
+        seller.role = 'seller'
+        await db_session.commit()
+        
+    # Шаг 3: Логинимся
+    login_data = {
+        "username": "test_seller",
+        "password": "strongadminpassword123"
+    }
+    response_login = client.post('/auth/login', data=login_data)
+    assert response_login.status_code == status.HTTP_200_OK
+    
+    # Шаг 4: Формируем заголовки для запросов
+    token_data = response_login.json()
+    headers = {
+        "Authorization": f"Bearer {token_data['access_token']}"
+    }
+    
+    yield headers
 
 
 @pytest.fixture(scope="function")
