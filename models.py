@@ -18,6 +18,7 @@ class User(Base):
     role = Column(String, default='user')
     
     products = relationship('Product', back_populates='owner')
+    cart = relationship('Cart', back_populates='user', uselist=False)
     
 
 # --- Модель таблицы Products ---
@@ -38,6 +39,8 @@ class Product(Base):
     creator_username = Column(String, nullable=True)
     
     owner = relationship('User', back_populates='products')
+    cart_items = relationship('CartItem', back_populates='product')
+
 
 # --- Модель таблицы Calculations (для фоновых задач) ---
 class Calculation(Base):
@@ -47,3 +50,27 @@ class Calculation(Base):
     username = Column(String, ForeignKey('users.username'), nullable=False)
     task = Column(String, nullable=False)   
     result = Column(String, nullable=False)
+    
+
+class Cart(Base):
+    __tablename__ = 'carts'
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'))
+    
+    user = relationship('User', back_populates='cart')
+    items = relationship('CartItem', back_populates='cart')
+
+
+class CartItem(Base):
+    __tablename__ = 'cart_items'
+    
+    id = Column(Integer, primary_key=True, index=True)
+    cart_id = Column(Integer, ForeignKey('carts.id'))
+    product_id = Column(Integer, ForeignKey('products.id'))
+    amount = Column(Integer, default=1)
+    
+    cart = relationship('Cart', back_populates='items')
+    product = relationship('Product', back_populates='cart_items')
+    
+    
