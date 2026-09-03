@@ -72,7 +72,10 @@ jobs:
 
       # Шаг 6: ПРОВЕРКА КОДА ЛИНТЕРОМ (НОВЫЙ ШАГ)
       - name: Lint with Ruff
-        run: ruff check .
+        run: |
+          ruff check . --fix
+          ruff check .
+
 
 
       # Шаг 7: Запуск тестов

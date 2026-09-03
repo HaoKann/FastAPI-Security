@@ -4,6 +4,13 @@ import pytest
 from fastapi.testclient import TestClient
 from httpx import AsyncClient, ASGITransport
 from starlette import status
+from create_db import get_db_session
+from models import Base, User # Импортируем Base, чтобы Алхимия знала, какие таблицы создавать
+from websocket import manager
+
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.pool import StaticPool
+
 
 # Устанавливаем переменную окружения ДО импорта приложения
 os.environ['TESTING'] = 'True'
@@ -15,13 +22,6 @@ try:
 except Exception as e:
     print(f"Error importing app: {e}")
     raise
-
-from create_db import get_db_session
-from models import Base, User # Импортируем Base, чтобы Алхимия знала, какие таблицы создавать
-from websocket import manager
-
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlalchemy.pool import StaticPool
 
 # --- 1. Настройка тестовой БД (в оперативной памяти) ---
 # Используем SQLite в памяти: работает молниеносно, данные стираются после остановки
@@ -142,7 +142,6 @@ async def admin_auth_headers(client: TestClient, db_session: AsyncSession):
     
     # Шаг 2: Делаем его админом напрямую в базе данных
     from sqlalchemy import select
-    from models import User
     
     stmt = select(User).where(User.username == 'test_admin')
     result = await db_session.execute(stmt)
@@ -183,7 +182,6 @@ async def seller_auth_headers(client: TestClient, db_session: AsyncSession):
     
     # Шаг 2: Делаем его админом напрямую в базе данных
     from sqlalchemy import select
-    from models import User
     
     stmt = select(User).where(User.username == 'test_seller')
     result = await db_session.execute(stmt)

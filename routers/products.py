@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, field_validator, computed_field
 
 
 # Импортируем зависимости из наших центральных модулей
-from auth import get_current_user, require_admin, require_seller
+from auth import get_current_user, require_seller
 from database import get_product_service
 from services.product_service import ProductService
 from s3_service import s3_client

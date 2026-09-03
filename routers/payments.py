@@ -5,7 +5,6 @@ from auth import get_current_user
 from repositories.product_repository import ProductRepository
 from services.product_service import ProductService 
 from services.payment_service import payment_service
-from models import User
 import stripe
 from config import settings
 from websocket import manager
