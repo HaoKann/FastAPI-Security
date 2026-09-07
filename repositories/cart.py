@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.orm import joinedload
 from models import Cart, CartItem
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,3 +30,56 @@ async def add_item_to_cart(db: AsyncSession, user_id: int, product_id: int, amou
     await db.commit()
 
     return {'message':'Товар успешно добавлен в корзину!'}
+
+
+async def get_cart_items(db: AsyncSession, user_id: int):
+    find_cart = select(Cart).where(Cart.user_id==user_id)
+    result = await db.execute(find_cart)
+    cart = result.scalar_one_or_none()    
+    
+    if not cart:
+        return {
+            'items': [],
+            'total_price': 0
+        }
+    
+    find_items = select(CartItem).where(CartItem.cart_id==cart.id).options(joinedload(CartItem.product))
+    result = await db.execute(find_items)
+    cart_items = result.scalars().all()
+    
+    
+    response_items = []
+    total_price = 0
+    
+    for item in cart_items:
+        
+        item_total = item.product.price * item.amount
+        total_price += item_total
+        
+        response_items.append({
+            "product_id": item.product_id,
+            "name": item.product.name,
+            "price": item.product.price,
+            "description": item.product.description,
+            "image_url": item.product.image_url,
+            "amount": item.amount
+        })
+        
+    return {
+        "items": response_items,
+        "total_price": total_price
+    }
+    
+async def delete_items_from_cart(db: AsyncSession, user_id: int, product_id: int): 
+    find_cart = select(Cart).where(Cart.user_id==user_id)
+    result = await db.execute(find_cart)
+    cart = result.scalar_one_or_none()
+    
+    if not cart:
+        return {'meassage': 'Корзина не найдена'}
+    
+    delete_item = delete(CartItem).where(CartItem.cart_id==cart.id, CartItem.product_id==product_id)
+    result = await db.execute(delete_item)
+    await db.commit()
+    
+    return {'message': 'Товар успешно удален из корзины'}
