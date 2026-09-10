@@ -17,6 +17,7 @@ from auth import router as auth_router
 
 # Добавляем импорт для роутера продуктов
 from routers.products import router as products_router
+from routers.cart import router as cart_router
 
 from routers import payments
 
@@ -231,6 +232,7 @@ app.include_router(websocket_router)
 app.include_router(media.router)
 app.include_router(users.router)
 app.include_router(payments.router)
+app.include_router(cart_router)
 
 # --- 5. Корневой эндпоинт (опционально) ---
 # Изменяем главный маршрут: теперь он отдает HTML-файл, а не редирект

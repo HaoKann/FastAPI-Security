@@ -13,7 +13,7 @@ from fastapi.templating import Jinja2Templates
 
 templates = Jinja2Templates(directory='templates')
 
-router = APIRouter(prefix='/payment', tags=['Платежи'])
+router = APIRouter(prefix='/payment', tags=['Payments'])
 
 @router.post('/checkout/{product_id}')
 async def buy_products(

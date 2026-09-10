@@ -99,7 +99,7 @@ async def get_product(product_id: int, service: ProductService = Depends(get_pro
 @router.post('/', response_model=Product)
 async def create_product(
     product_data: ProductCreate, 
-    current_user: dict = Depends(require_seller), 
+    current_user: dict = Depends(get_current_user), 
     service: ProductService = Depends(get_product_service)
 ):
     return await service.create_product(

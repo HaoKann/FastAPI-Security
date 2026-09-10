@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from auth import get_current_user
@@ -19,8 +20,8 @@ class CartItemResponse(BaseModel):
     product_id: int
     name: str
     price: int
-    description: str
-    image_url: str
+    description: Optional[str] = None
+    image_url: Optional[str] = None
     amount: int
     
 class CartResponse(BaseModel):
@@ -72,3 +73,14 @@ async def delete_item_from_cart(
         product_id=product_id
     )
     return result
+
+
+@router.put('/update/{product_id}')
+async def change_amount_of_product(
+    product_id: int,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = current_user.get('id')
+    
+    

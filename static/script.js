@@ -298,7 +298,8 @@ function generateProductCardHTML(p, isOwner) {
         `;
     } else {
         buttonsHtml = `
-            <div style="margin-top: auto;">
+            <div style="margin-top: auto; display: flex; gap: 8px;">
+                <button onclick="addToCart('${p.id}')" style="${btnAction}">🛒 В корзину</button>
                 <button onclick="buyProduct('${p.id}')" style="${btnPrimary}">💳 Купить</button>
             </div>
         `;
@@ -487,6 +488,7 @@ function showDashboard(token) {
 
     // НОВОЕ: Автоматически подключаем WebSockets
     connectWebSocket(token)
+    loadCart()
 }
 
 function logout() {
@@ -624,5 +626,123 @@ async function buyProduct(productId) {
         }
     } catch (error) {
         alert("Ошибка сети: " + error)
+    }
+}
+
+
+// ==========================================
+// 🛒 КОРЗИНА ТОВАРОВ
+// ==========================================
+
+// --- Функция добавления товара в корзину ---
+async function addToCart(productId) {
+    const token = localStorage.getItem('accessToken');
+    if (!token) return;
+
+    // Формируем данные. Допустим, мы всегда добавляем по 1 штуке.
+    const payload = {
+        product_id: parseInt(productId),
+        amount: 1
+    };
+
+    try {
+        const response = await fetch(`${API_URL}/cart/add`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+            addNotification('🛒 Товар успешно добавлен в корзину!');
+            loadCart(); // Сразу обновляем отображение корзины
+        } else {
+            const data = await response.json();
+            alert('Ошибка при добавлении: ' + (data.detail || 'Неизвестная ошибка'));
+        }
+    } catch (error) {
+        alert("Ошибка сети: " + error);
+    }
+}
+
+// --- Функция загрузки и отображения корзины ---
+async function loadCart() {
+    const token = localStorage.getItem('accessToken');
+    if (!token) return;
+
+    const cartContainer = document.getElementById('cart-items-container');
+    const cartTotal = document.getElementById('cart-total-price');
+
+    if (!cartContainer || !cartTotal) return; // Защита, если HTML еще не добавлен
+
+    try {
+        const response = await fetch(`${API_URL}/cart/view`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (response.ok) {
+            const data = await response.json(); // Наш CartResponse (items и total_price)
+            
+            // Если корзина пуста
+            if (data.items.length === 0) {
+                cartContainer.innerHTML = '<p style="color: var(--secondary-text);">Корзина пуста 😔</p>';
+                cartTotal.innerText = '0';
+                return;
+            }
+
+            // Генерируем HTML для товаров в корзине
+            let html = '';
+            data.items.forEach(item => {
+                // Замени часть функции loadCart() в script.js на этот дизайн карточки:
+                html += `
+                    <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2); padding: 12px; margin-bottom: 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+                        <div>
+                            <h4 style="margin: 0; color: var(--text-main); font-size: 1em;">${item.name}</h4>
+                            <p style="margin: 4px 0 0 0; font-size: 0.9em; color: var(--primary); font-weight: bold;">
+                                $${item.price} x ${item.amount} шт.
+                            </p>
+                        </div>
+                        <button onclick="removeFromCart(${item.product_id})" style="background: var(--danger); width: 40px; padding: 8px; border-radius: 8px;">
+                            ❌
+                        </button>
+                    </div>
+                `;
+            });
+
+            cartContainer.innerHTML = html;
+            cartTotal.innerText = data.total_price;
+        }
+    } catch (error) {
+        console.error("Ошибка загрузки корзины: ", error);
+    }
+}
+
+// --- Функция удаления из корзины ---
+async function removeFromCart(productId) {
+    const token = localStorage.getItem('accessToken');
+    if (!token) return;
+
+    try {
+        const response = await fetch(`${API_URL}/cart/delete/${productId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (response.ok) {
+            addNotification('🗑️ Товар удален из корзины.');
+            loadCart(); // Мгновенно перерисовываем корзину
+        } else {
+            const data = await response.json();
+            alert('Ошибка удаления: ' + data.detail);
+        }
+    } catch (error) {
+        alert("Ошибка сети: " + error);
     }
 }
