@@ -4,11 +4,21 @@ from models import Cart, CartItem
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
+async def find_cart(db: AsyncSession, user_id: int):
+    query = select(Cart).where(Cart.user_id == user_id)
+    result = await db.execute(query)
+    return result.scalar_one_or_none()
+    
+    
+async def find_existing_cart_item(db: AsyncSession, cart_id: int, product_id: int):
+        query = select(CartItem).where(CartItem.cart_id==cart_id, CartItem.product_id==product_id)
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
+
+
 async def add_item_to_cart(db: AsyncSession, user_id: int, product_id: int, amount: int):
     # 1. Ищем корзину пользователя
-    find_cart = select(Cart).where(Cart.user_id == user_id)
-    result = await db.execute(find_cart)
-    cart = result.scalar_one_or_none()
+    cart = await find_cart(db=db, user_id=user_id)
     
     # 2. Если корзины нет, создаем ее
     if cart is None:
@@ -17,9 +27,7 @@ async def add_item_to_cart(db: AsyncSession, user_id: int, product_id: int, amou
         await db.commit()
         await db.refresh(cart)
     
-    find_existing_cart_item = select(CartItem).where(CartItem.cart_id==cart.id, CartItem.product_id==product_id)
-    result = await db.execute(find_existing_cart_item)
-    existing_item = result.scalar_one_or_none()
+    existing_item = await find_existing_cart_item(db=db, cart_id=cart.id, product_id=product_id)
     
     if existing_item:
         existing_item.amount += amount
@@ -33,9 +41,8 @@ async def add_item_to_cart(db: AsyncSession, user_id: int, product_id: int, amou
 
 
 async def get_cart_items(db: AsyncSession, user_id: int):
-    find_cart = select(Cart).where(Cart.user_id==user_id)
-    result = await db.execute(find_cart)
-    cart = result.scalar_one_or_none()    
+    
+    cart = await find_cart(db=db, user_id=user_id)  
     
     if not cart:
         return {
@@ -71,9 +78,8 @@ async def get_cart_items(db: AsyncSession, user_id: int):
     }
     
 async def delete_items_from_cart(db: AsyncSession, user_id: int, product_id: int): 
-    find_cart = select(Cart).where(Cart.user_id==user_id)
-    result = await db.execute(find_cart)
-    cart = result.scalar_one_or_none()
+    
+    cart = await find_cart(db=db, user_id=user_id)
     
     if not cart:
         return {'meassage': 'Корзина не найдена'}
@@ -83,3 +89,25 @@ async def delete_items_from_cart(db: AsyncSession, user_id: int, product_id: int
     await db.commit()
     
     return {'message': 'Товар успешно удален из корзины'}
+
+
+async def update_cart_item_amount(db: AsyncSession, user_id: int, product_id: int, amount: int):
+    
+    cart = await find_cart(db=db, user_id=user_id)
+    if not cart:
+        return None
+        
+    existing_item = await find_existing_cart_item(db=db, cart_id=cart.id, product_id=product_id)
+    
+    if existing_item:
+        if amount <= 0:
+            await db.delete(existing_item)
+        else:    
+            existing_item.amount = amount
+            
+        await db.commit()
+        return {'message': 'Количество успешно изменено'}
+    else:
+        return {'message': 'Товара в корзине нет'}
+    
+    

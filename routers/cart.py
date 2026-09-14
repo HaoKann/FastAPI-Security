@@ -1,10 +1,10 @@
 from typing import Optional
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from auth import get_current_user
 from sqlalchemy.ext.asyncio import AsyncSession
 from create_db import get_db_session
-from repositories.cart import add_item_to_cart, get_cart_items, delete_items_from_cart
+from repositories.cart import add_item_to_cart, get_cart_items, delete_items_from_cart, update_cart_item_amount
 
 router = APIRouter(
     prefix='/cart',
@@ -27,6 +27,10 @@ class CartItemResponse(BaseModel):
 class CartResponse(BaseModel):
     items: list[CartItemResponse]
     total_price: int
+    
+class CartItemChangeAmount(BaseModel):
+    product_id: int
+    amount: int
 
 @router.post('/add')
 async def add_products_to_cart(
@@ -75,12 +79,24 @@ async def delete_item_from_cart(
     return result
 
 
-@router.put('/update/{product_id}')
+@router.put('/update')
 async def change_amount_of_product(
-    product_id: int,
+    item: CartItemChangeAmount,
     db: AsyncSession = Depends(get_db_session),
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user.get('id')
+    
+    result = await update_cart_item_amount(
+        db=db,
+        product_id=item.product_id,
+        amount=item.amount,
+        user_id=user_id
+    )
+
+    if result is None:
+        raise HTTPException(status_code=404, detail="Корзина не найдена")    
+    
+    return result   
     
     
