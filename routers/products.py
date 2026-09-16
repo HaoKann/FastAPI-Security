@@ -143,7 +143,7 @@ async def update_product(
 async def add_photo(
     product_id: int,
     image: Annotated[UploadFile, File(...)],
-    current_user: dict = Depends(require_seller),
+    current_user: dict = Depends(get_current_user),
     service: ProductService = Depends(get_product_service)
 ):
     filename = await s3_client.upload_file(file=image)
@@ -151,7 +151,8 @@ async def add_photo(
     updated_product = await service.update_product(
         username=current_user['username'],
         product_id=product_id,
-        image_url=filename
+        image_url=filename,
+        role=current_user['role']
     )
         
     if not updated_product:   

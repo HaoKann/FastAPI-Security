@@ -1,5 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from sqlalchemy.ext.asyncio import AsyncSession
+from models import CartItem, Cart
+from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 from create_db import get_db_session
 from auth import get_current_user
 from repositories.product_repository import ProductRepository
@@ -15,29 +18,38 @@ templates = Jinja2Templates(directory='templates')
 
 router = APIRouter(prefix='/payment', tags=['Payments'])
 
-@router.post('/checkout/{product_id}')
+@router.post('/checkout')
 async def buy_products(
-    product_id: int,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    # 1. Инициализируем репозиторий
-    product_repo = ProductRepository(db)
-
-    # 2. Ищем товар в базе
-    product = await product_repo.get_by_id(product_id)
-    if not product:
-        raise HTTPException(status_code=404, detail='Товар не найден')
-
-    # 3. Базовая защита: запрещаем юзеру покупать собственный товар
-    if product['owner_username'] == current_user['username']:
-        raise HTTPException(status_code=400, detail='Нельзя купить свой собственный товар')
+    # 1. Ищем все товары в корзине пользователя. 
+    # Используем joinedload, чтобы база сразу подтянула данные о самих товарах (Product)
+    query = (
+        select(CartItem)
+        .join(Cart)
+        .options(joinedload(CartItem.product))
+        .where(Cart.username == current_user['username'])
+    )
+    result = await db.execute(query)
+    cart_items = result.scalars().all()
     
+    if not cart_items:
+        raise HTTPException(status_code=404, detail='Ваша корзина пуста')
+    
+    # 3. Защита: проверяем каждый товар в корзине циклом
+    for item in cart_items:
+        if item.product.owner_username == current_user['username']:
+            raise HTTPException(
+                status_code=400, 
+                detail=f'Нельзя купить свой собственный товар: {item.product.name}'
+            )
     # 4. Обращаемся к нашему PaymentService для генерации сессии Stripe
-    checkout_url = await payment_service.create_checkout_session(product, current_user)
+    checkout_url = await payment_service.create_checkout_session(cart_items, current_user)
 
     # 5. Возвращаем ссылку фронтенду
     return {'checkout_url': checkout_url}
+
 
 @router.get('/success')
 async def payment_success(request: Request):

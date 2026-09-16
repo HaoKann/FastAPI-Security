@@ -300,7 +300,6 @@ function generateProductCardHTML(p, isOwner) {
         buttonsHtml = `
             <div style="margin-top: auto; display: flex; gap: 8px;">
                 <button onclick="addToCart('${p.id}')" style="${btnAction}">🛒 В корзину</button>
-                <button onclick="buyProduct('${p.id}')" style="${btnPrimary}">💳 Купить</button>
             </div>
         `;
     }
@@ -698,15 +697,25 @@ async function loadCart() {
             // Генерируем HTML для товаров в корзине
             let html = '';
             data.items.forEach(item => {
-                // Замени часть функции loadCart() в script.js на этот дизайн карточки:
                 html += `
                     <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2); padding: 12px; margin-bottom: 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
-                        <div>
+                        
+                        <!-- Информация о товаре -->
+                        <div style="flex-grow: 1;">
                             <h4 style="margin: 0; color: var(--text-main); font-size: 1em;">${item.name}</h4>
                             <p style="margin: 4px 0 0 0; font-size: 0.9em; color: var(--primary); font-weight: bold;">
-                                $${item.price} x ${item.amount} шт.
+                                $${item.price}
                             </p>
                         </div>
+                        
+                        <!-- Кнопки управления количеством -->
+                        <div style="display: flex; align-items: center; gap: 10px; margin-right: 15px;">
+                            <button onclick="changeCartAmount(${item.product_id}, ${item.amount - 1})" style="background: var(--secondary); padding: 4px 10px; border-radius: 6px; width: auto;">-</button>
+                            <span style="font-weight: bold; min-width: 20px; text-align: center; color: var(--text-main);">${item.amount}</span>
+                            <button onclick="changeCartAmount(${item.product_id}, ${item.amount + 1})" style="background: var(--secondary); padding: 4px 10px; border-radius: 6px; width: auto;">+</button>
+                        </div>
+
+                        <!-- Кнопка полного удаления -->
                         <button onclick="removeFromCart(${item.product_id})" style="background: var(--danger); width: 40px; padding: 8px; border-radius: 8px;">
                             ❌
                         </button>
@@ -746,3 +755,42 @@ async function removeFromCart(productId) {
         alert("Ошибка сети: " + error);
     }
 }
+
+
+async function changeCartAmount(productId, newAmount) {
+    const token = localStorage.getItem('accessToken')
+
+    if (!token) return
+
+    const payload = {
+        product_id: parseInt(productId),
+        amount: newAmount
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/cart/update`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        })
+
+        if (response.ok) {
+            // Если мы передали amount 0 (или меньше), наш умный бэкенд товар удалил
+            if (newAmount <= 0) {
+                addNotification('🗑️ Товар убран из корзины.');
+            }
+            
+            // Сразу же перезапрашиваем корзину, чтобы обновить цифры и Итоговую сумму!
+            loadCart(); 
+        } else {
+            const data = await response.json();
+            alert('Ошибка при изменении количества: ' + (data.detail || 'Неизвестная ошибка'));
+        }
+    } catch (error) {
+        alert("Ошибка сети: " + error);
+    }
+}
+
