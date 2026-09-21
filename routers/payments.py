@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from sqlalchemy.ext.asyncio import AsyncSession
-from models import CartItem, Cart
-from sqlalchemy import select
+from models import CartItem, Cart, User
+from sqlalchemy import select, delete
 from sqlalchemy.orm import joinedload
 from create_db import get_db_session
 from auth import get_current_user
@@ -18,6 +18,39 @@ templates = Jinja2Templates(directory='templates')
 
 router = APIRouter(prefix='/payment', tags=['Payments'])
 
+async def find_user_cart_items(db: AsyncSession, username: str):
+    query = (
+            select(CartItem)
+            .join(Cart)
+            .join(User)
+            .options(joinedload(CartItem.product))
+            .where(User.username == username)
+        )
+    result = await db.execute(query)
+    cart_items = result.scalars().all()
+    
+    if not cart_items:
+        raise HTTPException(status_code=404, detail='Ваша корзина пуста')
+    
+    return cart_items
+
+
+async def clear_user_cart(db: AsyncSession, username: str):
+    """
+    Функция для полной очистки корзины пользователя после успешной оплаты.
+    """
+    # Находим корзину пользователя
+    query = select(Cart).join(User).where(User.username == username)
+    result = await db.execute(query)
+    cart = result.scalar_one_or_none()
+    
+    if cart:
+        # Удаляем все записи из CartItem, которые привязаны к этой корзине
+        delete_query = delete(CartItem).where(CartItem.cart_id == cart.id)
+        await db.execute(delete_query)
+        await db.commit()
+
+
 @router.post('/checkout')
 async def buy_products(
     current_user: dict = Depends(get_current_user),
@@ -25,17 +58,7 @@ async def buy_products(
 ):
     # 1. Ищем все товары в корзине пользователя. 
     # Используем joinedload, чтобы база сразу подтянула данные о самих товарах (Product)
-    query = (
-        select(CartItem)
-        .join(Cart)
-        .options(joinedload(CartItem.product))
-        .where(Cart.username == current_user['username'])
-    )
-    result = await db.execute(query)
-    cart_items = result.scalars().all()
-    
-    if not cart_items:
-        raise HTTPException(status_code=404, detail='Ваша корзина пуста')
+    cart_items = await find_user_cart_items(db=db, username=current_user['username'])
     
     # 3. Защита: проверяем каждый товар в корзине циклом
     for item in cart_items:
@@ -77,7 +100,6 @@ async def stripe_webhook(
 
     # Читаем тело запроса как сырые байты
     payload = await request.body()
-
     try:
         # Stripe проверяет подпись с помощью нашего секрета из .env
         event = stripe.Webhook.construct_event(
@@ -91,43 +113,49 @@ async def stripe_webhook(
     # 3. Обрабатываем успешную оплату
     if event['type'] == 'checkout.session.completed':
         session = event['data']['object']
-
-        print("🔍 ДАННЫЕ СЕССИИ ОТ STRIPE:")
-        print(session)
-
         metadata = session['metadata']
 
-        product_id = int(metadata['product_id'])
+        # Получаем данные покупателя
         buyer_username = metadata['username']
-
-        # БЕЗОПАСНОЕ извлечение email покупателя с помощью .get()
-        customer_details = session.get('customer_details')        
+        
+        # ДО ЦИКЛА: достаем email покупателя один раз, так как он один на весь чек
+        customer_details = session.get('customer_details')      
         buyer_email = customer_details.get('email') if customer_details else None
-
-        print(f"✅ Пользователь {buyer_username} купил товар {product_id}")
+                
+        # Находим все товары, которые лежали в корзине в момент покупки
+        cart_items = await find_user_cart_items(db=db, username=buyer_username)
         
-        product_info = await product_service.get_product_by_id(product_id)
-        
-        # БЕЗОПАСНАЯ проверка: делаем действия, только если товар реально существует
-        if product_info:
-            previous_owner = product_info.get('owner_username')
+        # Проходимся по каждому купленному товару по очереди
+        for item in cart_items:
+            product_id = item.product_id
             
-            # 1. Отправляем уведомление бывшему продавцу по WebSockets
+            # Благодаря joinedload, вся инфа о товаре уже лежит в item.product
+            product_info = item.product
+            
+            print(f"✅ Пользователь {buyer_username} купил товар {product_id} - {product_info.name}")
+
+            previous_owner = product_info.owner_username
+
+            # 3.1. Отправляем уведомление бывшему продавцу (если он есть)
             if previous_owner:
                 await manager.send_personal_message(
-                    message=f"Ваш товар {product_info['name']} был куплен {buyer_username}", 
+                    message=f"Ваш товар {product_info.name} был куплен {buyer_username}", 
                     username=previous_owner
                 )
 
-        # 2. Меняем владельца в БД
-        await product_service.change_product_ownership(buyer_username, product_id)
-        
-        # 3. Отправляем фоновую задачу на email (Celery)
-        if buyer_email:
-            send_email_to_user_task.delay(buyer_email, product_id)
-            print(f"📨 Задача на отправку письма для {buyer_email} передана в Celery")
-        else:
-            print("⚠️ Stripe не передал email покупателя")
+            # 3.2. Меняем владельца товара в базе данных (используем сервис!)
+            await product_service.change_product_ownership(buyer_username, product_id) 
+
+            # 3.3. Отправляем письмо покупателю с купленным товаром            
+            if buyer_email:
+                send_email_to_user_task.delay(buyer_email, product_id)
+                print(f"📨 Задача на отправку письма для {buyer_email} передана в Celery")
+            else:
+                print("⚠️ Stripe не передал email покупателя")
+
+        # 4. После того как все товары обработаны, полностью очищаем корзину!
+        await clear_user_cart(db=db, username=buyer_username)
+        print(f"🛒 Корзина пользователя {buyer_username} успешно очищена.")
 
             
     # Обязательно возвращаем 200 OK, чтобы Stripe не пытался слать запрос снова
