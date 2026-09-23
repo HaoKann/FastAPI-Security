@@ -17,7 +17,7 @@ class PaymentService:
         
         for item in cart_items:
             # 1. Переводим цену в центы (Stripe принимает только целые числа в минимальных единицах валюты)
-            price_in_cents = int(item.product['price'] * 100)
+            price_in_cents = int(item.product.price * 100)
             
             # 2. Создаем словарь для конкретного товара в формате Stripe
             line_item = {
@@ -38,18 +38,19 @@ class PaymentService:
         
         # 5. Генерируем Idempotency Key (защита от дублей)
         # Теперь он привязан к корзине пользователя, а не к одному товару
-        idem_key = f"checkout_cart{user['username']}_{uuid.uuid4()}"
-
+        idem_key = f"checkout_{user['username']}_cart_{cart_items[0].cart_id}_{uuid.uuid4()}"
+        
         try:
             # Создаем саму сессию в Stripe
             session = stripe.checkout.Session.create(
                 payment_method_types=['card'], # Разрешаем платить картами
-                
+                line_items=stripe_line_items,
                 mode='payment', # Разовый платеж (не подписка)
 
                 # В metadata кладем только username.
                 # Вебхук по этому имени найдет корзину и обработает покупку.
                 metadata={
+                    "cart_id": str(cart_items[0].cart_id),
                     "username": user['username']
                 },
 

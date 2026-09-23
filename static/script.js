@@ -80,7 +80,11 @@ async function login() {
             localStorage.setItem('accessToken', data.access_token)
             showDashboard(data.access_token)
         } else {
-            alert('Ошибка входа: ' + data.detail)
+            // НОВОЕ: Проверяем, является ли data.detail объектом
+            const errorMessage = typeof data.detail === 'object'
+                ? JSON.stringify(data.detail, null, 2)
+                : data.detail
+            alert("Ошибка входа:\n" + errorMessage)
         }
     } catch (error) {
         responseArea.innerText = "Ошибка сети: " + error
@@ -598,7 +602,7 @@ async function startFactorialTask() {
 
 
 // --- Функция покупки товара (Stripe Checkout) ---
-async function buyProduct(productId) {
+async function checkoutCart() {
     const token = localStorage.getItem('accessToken')
     if (!token) {
         alert("Пожалуйста, авторизуйтесь для покупки.")
@@ -607,7 +611,7 @@ async function buyProduct(productId) {
 
     try {
         // Дергаем наш новый роутер FastAPI
-        const response = await fetch(`${API_URL}/payment/checkout/${productId}`, {
+        const response = await fetch(`${API_URL}/payment/checkout`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
@@ -621,7 +625,7 @@ async function buyProduct(productId) {
             // МАГИЯ ЗДЕСЬ: перенаправляем браузер на защищенную страницу Stripe
             window.location.href = data.checkout_url
         } else {
-            alert('Ошибка покупки: ' + (data.detail || "Неизвестная ошибка"))
+            alert('Ошибка оформления заказа: ' + (data.detail || "Неизвестная ошибка"))
         }
     } catch (error) {
         alert("Ошибка сети: " + error)

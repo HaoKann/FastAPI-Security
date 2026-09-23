@@ -39,8 +39,8 @@ class Token(BaseModel):
     token_type: str
 
 class UserCreate(BaseModel):
-    username: str
-    password: str = Field(..., max_length=72)
+    username: str = Field(..., min_length=3, max_length=50)
+    password: str = Field(...,min_length=5, max_length=72)
 
 class UserOut(BaseModel):
     username: str

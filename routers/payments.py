@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Header
+from fastapi import APIRouter, Depends, HTTPException, Request, Header, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from models import CartItem, Cart, User
 from sqlalchemy import select, delete
@@ -59,6 +59,12 @@ async def buy_products(
     # 1. Ищем все товары в корзине пользователя. 
     # Используем joinedload, чтобы база сразу подтянула данные о самих товарах (Product)
     cart_items = await find_user_cart_items(db=db, username=current_user['username'])
+    
+    if not cart_items:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ваша корзина пуста. Добавьте товары перед оформлением заказа."
+        )
     
     # 3. Защита: проверяем каждый товар в корзине циклом
     for item in cart_items:

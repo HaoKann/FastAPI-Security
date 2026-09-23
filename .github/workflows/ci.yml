@@ -31,7 +31,7 @@ jobs:
       S3_BUCKET_NAME: "test-bucket"
 
       STRIPE_SECRET_KEY: "test_stripe_secret"
-      STRIPE_WEBHOOK_SECRET: "test_stripe_webhook"
+      STRIPE_WEBHOOK_SECRET: "whsec_6d35fce86488604b26737bf647a11d3e34d897a996812d9342a21307df65d632"
       SMTP_USER: "test@example.com"
       SMTP_PASSWORD: "test_password"
       SMTP_HOST: "smtp.example.com"
