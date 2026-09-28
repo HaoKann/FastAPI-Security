@@ -7,6 +7,7 @@ from create_db import get_db_session
 from repositories.cart import add_item_to_cart, get_cart_items, delete_items_from_cart, update_cart_item_amount
 from sqlalchemy import select
 from models import User
+from pydantic import BaseModel, Field
 
 router = APIRouter(
     prefix='/cart',
@@ -16,7 +17,7 @@ router = APIRouter(
 
 class CartItemCreate(BaseModel):
     product_id: int
-    amount: int
+    amount: int = Field(gt=0, description="Количество должно быть больше 0")
     
 class CartItemResponse(BaseModel):
     product_id: int
@@ -37,23 +38,12 @@ class CartItemChangeAmount(BaseModel):
 @router.post('/add')
 async def add_products_to_cart(
     item: CartItemCreate, # Эти данные нужно брать из тела запроса (JSON)
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    username = current_user.get('username')
-    
-    query = select(User).where(User.username == username)
-    result = await db.execute(query)
-    db_user = result.scalar_one_or_none()
-    
-    if not db_user:
-        raise HTTPException(status_code=404, detail='Пользователь не найден')
-    
-    user_id = db_user.id
-    
     result = await add_item_to_cart(
         db=db,
-        user_id=user_id,
+        user_id=current_user.id,
         product_id=item.product_id,
         amount=item.amount
     )

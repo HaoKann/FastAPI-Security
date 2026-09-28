@@ -1,8 +1,8 @@
 from sqlalchemy import select, delete
 from sqlalchemy.orm import joinedload
-from models import Cart, CartItem
+from models import Cart, CartItem, Product
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from fastapi import HTTPException, status
 
 async def find_cart(db: AsyncSession, user_id: int):
     query = select(Cart).where(Cart.user_id == user_id)
@@ -17,15 +17,19 @@ async def find_existing_cart_item(db: AsyncSession, cart_id: int, product_id: in
 
 
 async def add_item_to_cart(db: AsyncSession, user_id: int, product_id: int, amount: int):
-    # 1. Ищем корзину пользователя
+    # Ищем товар в БД
+    product = await db.get(Product, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Товар не найден")
+    
+    # Ищем корзину пользователя
     cart = await find_cart(db=db, user_id=user_id)
     
-    # 2. Если корзины нет, создаем ее
+    #  Если корзины нет, создаем ее
     if cart is None:
         cart = Cart(user_id=user_id)
         db.add(cart)
-        await db.commit()
-        await db.refresh(cart)
+        await db.flush()
     
     existing_item = await find_existing_cart_item(db=db, cart_id=cart.id, product_id=product_id)
     

@@ -8,7 +8,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, OAuth2Pas
 from pydantic import BaseModel, Field
 from typing import Optional
 from s3_service import s3_client
-
+from models import User
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from create_db import get_db_session
@@ -77,7 +77,7 @@ def create_tokens(data: dict) -> dict:
 
 
 # --- НОВАЯ ФУНКЦИЯ-ПОМОЩНИК НА SQLALCHEMY ---
-async def get_user_from_db(db: AsyncSession, username: str) -> dict | None:
+async def get_user_from_db(db: AsyncSession, username: str) -> User | None:
     """Получает пользователя из БД. Возвращает None в тестовом режиме."""
     print(f"get_user_from_db вызван, db={type(db)}, username={username}")
 
@@ -91,15 +91,7 @@ async def get_user_from_db(db: AsyncSession, username: str) -> dict | None:
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     
-    # Чтобы не ломать старый код, отдаем данные в виде словаря
-    if user:
-        return {
-            'username' : user.username,
-            'hashed_password': user.hashed_password,
-            'avatar_url': user.avatar_url,
-            'role': user.role
-        }
-    return None
+    return user
 
 
 # --- 4. Зависимость для получения текущего пользователя ---
@@ -108,7 +100,7 @@ async def get_user_from_db(db: AsyncSession, username: str) -> dict | None:
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db_session) #  1. Даем функции доступ к БД
-) -> dict:
+) -> User:
     
     credentials_exception = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentioals")
 
@@ -124,12 +116,11 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
 
-    # 👇 2. Идем в базу данных за ПОЛНЫМИ данными пользователя
+    # Получаем ORM-объект User из базы данных
     user = await get_user_from_db(db, username)
     if user is None:
         raise credentials_exception
 
-    # Возвращаем полный словарь (там теперь есть username, hashed_password и avatar_url)
     return user
 
 
