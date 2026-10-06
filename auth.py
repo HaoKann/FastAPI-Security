@@ -157,19 +157,19 @@ async def login_for_token(form_data: OAuth2PasswordRequestForm = Depends(), db: 
     """Выдает access и refresh токены для пользователя."""
     user = await get_user_from_db(db, form_data.username)
 
-    if not user or not verify_password(form_data.password, user["hashed_password"]):
+    if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверный логин или пароль",
             headers={'WWW-Authenticate': 'Bearer'},
         )
     
-    return create_tokens(data={"sub": user["username"]})
+    return create_tokens(data={"sub": user.username})
 
 @router.get('/me', summary='Get current user info', response_model=UserOut)
-async def read_users_me(current_user: dict = Depends(get_current_user)):
+async def read_users_me(current_user: User = Depends(get_current_user)):
     # 1. Достаем имя файла аватарки из профиля пользователя
-    avatar_filename = current_user.get('avatar_url')
+    avatar_filename = current_user.avatar_url
 
     # 2. Если аватарка вообще существует (пользователь ее загружал)
     if avatar_filename:
@@ -177,7 +177,7 @@ async def read_users_me(current_user: dict = Depends(get_current_user)):
         presigned_url = await s3_client.get_presigned_url(avatar_filename)
 
         # Подменяем короткое имя файла на длинную временную ссылку
-        current_user['avatar_url'] = presigned_url
+        current_user.avatar_url = presigned_url
         
     # 3. Отдаем профиль фронтенду (Pydantic сам всё отфильтрует)
     return current_user 
@@ -185,9 +185,9 @@ async def read_users_me(current_user: dict = Depends(get_current_user)):
 
 # Защищенный эндпоинт для пользователя
 @router.get('/protected')
-async def protected_route(current_user: dict = Depends(get_current_user)):
+async def protected_route(current_user: User = Depends(get_current_user)):
     # Мы ожидаем словарь (dict) и берем из него имя пользователя
-    username = current_user['username']
+    username = current_user.username
     return {'message': f'Привет, {username}! Это защищенная зона'}
 
 
@@ -198,8 +198,9 @@ class RoleChecker:
     def __init__(self, allowed_roles: list[str]):
         self.allowed_roles = allowed_roles
         
-    def __call__(self, current_user: dict = Depends(get_current_user)):
-        user_role = current_user.get('role', 'user')
+    def __call__(self, current_user: User = Depends(get_current_user)):
+        # Безопасно получаем атрибут объекта
+        user_role = getattr(current_user, 'role', 'user')
         
         if user_role not in self.allowed_roles:
             raise HTTPException(

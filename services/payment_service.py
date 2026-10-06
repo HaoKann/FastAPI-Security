@@ -2,7 +2,7 @@ import stripe
 import uuid
 from fastapi import HTTPException
 from config import settings
-
+from models import User
 
 # Инициализируем Stripe с нашим секретным ключом из config.py
 stripe.api_key = settings.STRIPE_SECRET_KEY
@@ -11,7 +11,7 @@ stripe.api_key = settings.STRIPE_SECRET_KEY
 #  Создает сессию оплаты в Stripe и возвращает защищенный URL для редиректа.
 
 class PaymentService:
-    async def create_checkout_session(self, cart_items: list, user: dict) -> str:
+    async def create_checkout_session(self, cart_items: list, user: User) -> str:
         
         stripe_line_items = []
         
@@ -38,12 +38,11 @@ class PaymentService:
         
         # 5. Генерируем Idempotency Key (защита от дублей)
         # Теперь он привязан к корзине пользователя, а не к одному товару
-        idem_key = f"checkout_{user['username']}_cart_{cart_items[0].cart_id}_{uuid.uuid4()}"
+        idem_key = f"checkout_{user.username}_cart_{cart_items[0].cart_id}_{uuid.uuid4()}"
         
         try:
             # Создаем саму сессию в Stripe
             session = stripe.checkout.Session.create(
-                payment_method_types=['card'], # Разрешаем платить картами
                 line_items=stripe_line_items,
                 mode='payment', # Разовый платеж (не подписка)
 
@@ -51,7 +50,7 @@ class PaymentService:
                 # Вебхук по этому имени найдет корзину и обработает покупку.
                 metadata={
                     "cart_id": str(cart_items[0].cart_id),
-                    "username": user['username']
+                    "username": user.username
                 },
 
                 # Куда перекинуть юзера после успешной или отмененной оплаты

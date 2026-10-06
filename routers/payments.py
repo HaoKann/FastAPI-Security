@@ -53,12 +53,12 @@ async def clear_user_cart(db: AsyncSession, username: str):
 
 @router.post('/checkout')
 async def buy_products(
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session)
 ):
     # 1. Ищем все товары в корзине пользователя. 
     # Используем joinedload, чтобы база сразу подтянула данные о самих товарах (Product)
-    cart_items = await find_user_cart_items(db=db, username=current_user['username'])
+    cart_items = await find_user_cart_items(db=db, username=current_user.username)
     
     if not cart_items:
         raise HTTPException(
@@ -68,7 +68,7 @@ async def buy_products(
     
     # 3. Защита: проверяем каждый товар в корзине циклом
     for item in cart_items:
-        if item.product.owner_username == current_user['username']:
+        if item.product.owner_username == current_user.username:
             raise HTTPException(
                 status_code=400, 
                 detail=f'Нельзя купить свой собственный товар: {item.product.name}'
@@ -125,8 +125,8 @@ async def stripe_webhook(
         buyer_username = metadata['username']
         
         # ДО ЦИКЛА: достаем email покупателя один раз, так как он один на весь чек
-        customer_details = session.get('customer_details')      
-        buyer_email = customer_details.get('email') if customer_details else None
+        customer_details = getattr(session, 'customer_details', None)
+        buyer_email = customer_details.email if customer_details else None
                 
         # Находим все товары, которые лежали в корзине в момент покупки
         cart_items = await find_user_cart_items(db=db, username=buyer_username)
