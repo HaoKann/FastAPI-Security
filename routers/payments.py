@@ -119,11 +119,21 @@ async def stripe_webhook(
     # 3. Обрабатываем успешную оплату
     if event['type'] == 'checkout.session.completed':
         session = event['data']['object']
-        metadata = session['metadata']
-
-        # Получаем данные покупателя
-        buyer_username = metadata['username']
+        # Извлекаем metadata из сессии
+        metadata = getattr(session, 'metadata', {}) or {}
         
+        # Если metadata это объект Stripe, преобразуем его в обычный словарь
+        if hasattr(metadata, 'to_dict'):
+            metadata = metadata.to_dict()
+            
+        
+        # Безопасно получаем username
+        buyer_username = metadata.get('username')
+        
+        if not buyer_username:
+            print("⚠️ Предупреждение: 'username' не найден в metadata сессии. Вебхук пропущен.")  
+            return {"status": "ignored", "reason": "No username in metadata"}
+                  
         # ДО ЦИКЛА: достаем email покупателя один раз, так как он один на весь чек
         customer_details = getattr(session, 'customer_details', None)
         buyer_email = customer_details.email if customer_details else None
