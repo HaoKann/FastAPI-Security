@@ -13,7 +13,7 @@ router = APIRouter(tags=['Users'])
 @router.post('/users/me/avatar')
 async def update_avatar(
     file: Annotated[UploadFile, File(...)],
-    current_user: dict = Depends(get_current_user), # Требуем, чтобы пользователь был залогинен
+    current_user: User = Depends(get_current_user), # Требуем, чтобы пользователь был залогинен
     db: AsyncSession = Depends(get_db_session) # Подключаемся к базе через SQLAlchemy
 ):
     # 1. Проверяем формат файла (только картинки)
@@ -32,7 +32,7 @@ async def update_avatar(
         raise HTTPException(status_code=503, detail='Сервис хранения картинок сейчас недоступен. Попробуйте позже')
     
     # Берем username из словаря current_user
-    username = current_user['username']
+    username = current_user.username
     
     # 3. Записываем ссылку в базу данных с помощью SQLAlchemy
     stmt = (

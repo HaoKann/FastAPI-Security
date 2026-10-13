@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from auth import get_current_user
 from celery_worker import celery_app
 import os
-
+from models import User
 import redis.asyncio as aioredis
 import json
 
@@ -21,6 +21,8 @@ import json
 import smtplib
 from email.message import EmailMessage
 from config import settings
+
+from services.pdf_service import generate_receipt_pdf
 
 # --- 1. Импорты и настройка ---
 
@@ -160,13 +162,13 @@ def compute_sum_range_task(self, start: int, end: int, username: str):
     return asyncio.run(_run_async_logic())
 
 @celery_app.task(name='send_email_to_user')
-def send_email_to_user_task(email: str, product_id: int):
+def send_email_to_user_task(user_email: str, product_id: int, amount: float = 0.0, currency: str = 'usd'):
     try:
         # Создаем само письмо (заполняем конверт)
         msg = EmailMessage()
         msg['Subject'] = f'Успешная покупка товара #{product_id}!'
         msg['From'] = settings.SMTP_USER
-        msg['To'] = email
+        msg['To'] = user_email
 
         # 1. Сначала добавляем обычный текст, потом HTML. Почтовый клиент выберет, что показать.
         msg.set_content(f'Спасибо за покупку товара с ID {product_id}! Мы ценим ваш выбор.')
@@ -207,15 +209,31 @@ def send_email_to_user_task(email: str, product_id: int):
 
         # 3 Добавляем HTML как главную альтернативку
         msg.add_alternative(html_content, subtype='html')
+        
+        # 1. Вызываем ваш сервис генерации PDF
+        pdf_buffer = generate_receipt_pdf(
+            payment_id=f'PAY-PROD-{product_id}',
+            amount=amount,
+            currency=currency,
+            user_email=user_email
+        )
 
-        print(f"⏳ Подключаемся к серверу Google для отправки на {email}...")
+        # 2. Прикрепляем сгенерированный PDF-чек к письму
+        msg.add_attachment(
+            pdf_buffer.getvalue(),
+            maintype='application',
+            subtype='pdf',
+            filename=f'receipt_product_{product_id}.pdf'
+        )
+        
+        print(f"⏳ Подключаемся к серверу Google для отправки на {user_email}...")
 
         # 3. Подключаемся к серверу Google (через защищенный порт 465) и отправляем
         with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT) as server:
             server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
             server.send_message(msg)
 
-            print(f"✅ Боевое письмо успешно отправлено на {email}!")
+            print(f"✅ Боевое письмо успешно отправлено на {user_email}!")
             return True
         
     except Exception as e:
@@ -229,7 +247,7 @@ def send_email_to_user_task(email: str, product_id: int):
 @router.post('/factorial', status_code=status.HTTP_202_ACCEPTED)
 async def start_factorial_computation(
     request: FactorialRequest,
-    current_user: dict = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Принимает запрос и отправляет задачу на вычисление факториала в очередь Celery.
@@ -237,7 +255,7 @@ async def start_factorial_computation(
     if request.n <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
     
-    username = current_user['username']
+    username = current_user.username
 
     # Отправляем задачу в очередь Redis.
     # Celery-воркер подхватит ее и выполнит.
@@ -249,11 +267,11 @@ async def start_factorial_computation(
 
 
 @router.post('/sum', status_code=status.HTTP_202_ACCEPTED)
-async def start_sum_computation(request: SumRequest, current_user: dict = Depends(get_current_user) ):
+async def start_sum_computation(request: SumRequest, current_user: User = Depends(get_current_user) ):
     """Запускает вычисление суммы в диапазоне в фоновом режиме."""
     if request.start > request.end:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Начало диапозона не может быть больше конца')
     
-    username = current_user['username']
+    username = current_user.username
     compute_sum_range_task.delay(start = request.start, end = request.end, username = username)
     return {'message': f'Вычисление суммы от {request.start} до {request.end} начато в фоне'}
