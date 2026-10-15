@@ -1,0 +1,12 @@
+[run]
+omit =
+    tests/*
+    fix_minio.py
+    init_s3.py
+    celery_worker.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    def __repr__

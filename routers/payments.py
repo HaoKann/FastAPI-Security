@@ -176,3 +176,15 @@ async def stripe_webhook(
             
     # Обязательно возвращаем 200 OK, чтобы Stripe не пытался слать запрос снова
     return {'status': 'success'}
+
+
+@router.post('/api/test_receipt')
+def test_send_receipt(email: str, product_id: int = 1, amount: float = 49.99):
+    """Тестовый эндпоинт для генерации PDF и отправки Email."""
+    send_email_to_user_task.delay(
+        user_email=email,
+        currency="usd",
+        product_id=product_id,
+        amount=amount
+    )
+    return {'status': 'ok', 'message': f'Задача отправлена в Celery для {email}'}
