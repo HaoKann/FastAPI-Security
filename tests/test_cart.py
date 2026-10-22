@@ -3,19 +3,6 @@ from fastapi import HTTPException
 from models import Cart, Product, User, CartItem
 from repositories import cart
 
-@pytest.fixture
-async def sample_product(db_session):
-    """Фикстура для создания тестового товара."""
-    product = Product(
-        name='test_product',
-        price=1000.0,
-        description = 'test_product',
-        image_url = 'http://example.com/test_product.jpg'
-    )
-    db_session.add(product)
-    await db_session.commit()
-    await db_session.refresh(product)
-    return product
 
 @pytest.fixture
 async def sample_user(db_session):
@@ -31,6 +18,20 @@ async def sample_user(db_session):
     await db_session.refresh(user)
     return user
 
+@pytest.fixture
+async def sample_product(db_session, sample_user):
+    """Фикстура для создания тестового товара."""
+    product = Product(
+        name='test_product',
+        price=1000.0,
+        description = 'test_product',
+        image_url = 'http://example.com/test_product.jpg',
+        owner_username = sample_user.username
+    )
+    db_session.add(product)
+    await db_session.commit()
+    await db_session.refresh(product)
+    return product
 
 # 1. ТЕСТЫ ДОБАВЛЕНИЯ В КОРЗИНУ (add_item_to_cart)
 
@@ -40,7 +41,7 @@ async def test_add_item_to_cart_product_not_found(db_session, sample_user):
     with pytest.raises(HTTPException) as exc_info:
         await cart.add_item_to_cart(db=db_session, user_id=sample_user.id, product_id=99999, amount=1)
         
-    assert exc_info.stat.value.status_code == 404
+    assert exc_info.value.status_code == 404
     assert exc_info.value.detail == 'Товар не найден'
     
 @pytest.mark.asyncio
@@ -56,10 +57,10 @@ async def test_add_item_to_cart_creates_new_cart(db_session, sample_user, sample
     assert result == {'message': 'Товар успешно добавлен в корзину!'}
     
     # Проверяем, что корзина и позиция действительно создались в БД
-    cart = await cart.find_cart(db=db_session, user_id=sample_user.id)
-    assert cart is not None
+    user_cart = await cart.find_cart(db=db_session, user_id=sample_user.id)
+    assert user_cart is not None
     
-    item = await cart.find_existing_cart_item(db_session, cart_id=cart.id, product_id=sample_product.id)
+    item = await cart.find_existing_cart_item(db_session, cart_id=user_cart.id, product_id=sample_product.id)
     assert item is not None
     assert item.amount == 2
     
@@ -72,8 +73,8 @@ async def test_add_item_to_cart_increment_existing_item(db_session, sample_user,
     # Добавляем ещё 3 штуки
     await cart.add_item_to_cart(db=db_session, user_id=sample_user.id, product_id=sample_product.id, amount=3)
     
-    cart = await cart.find_cart(db=db_session, user_id=sample_user.id)
-    item = await cart.find_existing_cart_item(db=db_session, cart_id=cart.id, product_id=sample_product.id)
+    user_cart = await cart.find_cart(db=db_session, user_id=sample_user.id)
+    item = await cart.find_existing_cart_item(db=db_session, cart_id=user_cart.id, product_id=sample_product.id)
     
     assert item.amount == 4
     
@@ -125,7 +126,7 @@ async def test_delete_items_from_cart_success(db_session, sample_user, sample_pr
 @pytest.mark.asyncio
 async def test_update_cart_item_amount_no_cart(db_session, sample_user):
     """Тест обновления количества, если у пользователя нет корзины."""
-    response = await cart.update_cart_item_amount(db=db_session, user_id=sample_user, product_id=1, amount=5)
+    response = await cart.update_cart_item_amount(db=db_session, user_id=sample_user.id, product_id=1, amount=5)
     assert response is None
 
     
@@ -147,8 +148,8 @@ async def test_update_cart_item_amount_positive(db_session, sample_user, sample_
     response = await cart.update_cart_item_amount(db=db_session, user_id=sample_user.id, product_id=sample_product.id, amount=5)
     assert response == {'message': 'Количество успешно изменено'}
     
-    cart = await cart.find_cart(db_session, user_id=sample_user.id)
-    item = await cart.find_existing_cart_item(db_session, cart_id=cart.id, product_id=sample_product.id)
+    user_cart = await cart.find_cart(db_session, user_id=sample_user.id)
+    item = await cart.find_existing_cart_item(db_session, cart_id=user_cart.id, product_id=sample_product.id)
     assert item.amount == 5
     
 @pytest.mark.asyncio
@@ -161,6 +162,6 @@ async def test_update_cart_item_amount_zero_or_less(db_session, sample_product, 
     assert response == {'message': 'Количество успешно изменено'}
     
     # Проверяем, что товар действительно удален из БД
-    cart = await cart.find_cart(db_session, user_id=sample_user.id)
-    item = await cart.find_existing_cart_item(db_session, cart_id=cart.id, product_id=sample_product.id)
+    user_cart = await cart.find_cart(db_session, user_id=sample_user.id)
+    item = await cart.find_existing_cart_item(db_session, cart_id=user_cart.id, product_id=sample_product.id)
     assert item is None

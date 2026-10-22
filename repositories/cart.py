@@ -86,7 +86,7 @@ async def delete_items_from_cart(db: AsyncSession, user_id: int, product_id: int
     cart = await find_cart(db=db, user_id=user_id)
     
     if not cart:
-        return {'meassage': 'Корзина не найдена'}
+        return {'message': 'Корзина не найдена'}
     
     delete_item = delete(CartItem).where(CartItem.cart_id==cart.id, CartItem.product_id==product_id)
     result = await db.execute(delete_item)
