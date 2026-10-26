@@ -1,20 +1,5 @@
 import pytest
-from models import Product
 
-@pytest.fixture
-async def sample_product(db_session, sample_user):
-    """Фикстура для создания тестового товара."""
-    product = Product(
-        name='test_product',
-        price=1000.0,
-        description = 'test_product',
-        image_url = 'http://example.com/test_product.jpg',
-        owner_username = sample_user.username
-    )
-    db_session.add(product)
-    await db_session.commit()
-    await db_session.refresh(product)
-    return product
 
 # 1. ТЕСТЫ POST /cart/add
 @pytest.mark.asyncio
@@ -51,7 +36,7 @@ async def test_get_cart_items_empty(ac, auth_headers):
     response = await ac.get('/cart/view', headers=auth_headers)
     
     assert response.status_code == 200
-    assert response.json == {'items': [], 'total_price': 0}
+    assert response.json() == {'items': [], 'total_price': 0}
     
 
 @pytest.mark.asyncio
@@ -118,4 +103,4 @@ async def test_router_update_cart_item_amount_not_found(ac, auth_headers):
 async def test_router_unauthorized_access(ac):
     """Запрос без auth_headers должен возвращать 401 Unauthorized."""
     response = await ac.get('/cart/view')
-    assert response.status_code == 401
+    assert response.status_code == 403

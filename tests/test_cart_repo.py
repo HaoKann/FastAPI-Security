@@ -1,40 +1,9 @@
 import pytest
 from fastapi import HTTPException
-from models import Cart, Product, User, CartItem
 from repositories import cart
 
 
-@pytest.fixture
-async def sample_user(db_session):
-    """Фикстура для создания тестового пользователя."""
-    user = User(
-        username='test_user',
-        hashed_password='hashed_password',
-        avatar_url='http://avatar.png',
-        role='user'
-    )
-    db_session.add(user)
-    await db_session.commit()
-    await db_session.refresh(user)
-    return user
-
-@pytest.fixture
-async def sample_product(db_session, sample_user):
-    """Фикстура для создания тестового товара."""
-    product = Product(
-        name='test_product',
-        price=1000.0,
-        description = 'test_product',
-        image_url = 'http://example.com/test_product.jpg',
-        owner_username = sample_user.username
-    )
-    db_session.add(product)
-    await db_session.commit()
-    await db_session.refresh(product)
-    return product
-
 # 1. ТЕСТЫ ДОБАВЛЕНИЯ В КОРЗИНУ (add_item_to_cart)
-
 @pytest.mark.asyncio
 async def test_add_item_to_cart_product_not_found(db_session, sample_user):
     """Тест ошибки 404 при добавлении несуществующего товара."""
@@ -78,8 +47,8 @@ async def test_add_item_to_cart_increment_existing_item(db_session, sample_user,
     
     assert item.amount == 4
     
+    
 # 2. ТЕСТЫ ПОЛУЧЕНИЯ КОРЗИНЫ (get_cart_items)
-
 @pytest.mark.asyncio
 async def test_get_cart_items_no_cart(db_session, sample_user):
     """Тест получения корзины, если у пользователя ее еще нет."""
@@ -101,8 +70,8 @@ async def test_get_cart_items_success(db_session, sample_user, sample_product):
     assert response['items'][0]['amount'] == 2
     
     
+    
 # 3. ТЕСТЫ УДАЛЕНИЯ ИЗ КОРЗИНЫ (delete_items_from_cart)
-
 @pytest.mark.asyncio
 async def test_delete_items_from_cart_no_cart(db_session, sample_user):
     """Тест удаления из корзины, когда самой корзины нет."""
@@ -121,8 +90,8 @@ async def test_delete_items_from_cart_success(db_session, sample_user, sample_pr
     cart_data = await cart.get_cart_items(db=db_session, user_id=sample_user.id)
     assert len(cart_data['items']) == 0
     
+    
 # 4. ТЕСТЫ ОБНОВЛЕНИЯ КОЛИЧЕСТВА (update_cart_item_amount)
-
 @pytest.mark.asyncio
 async def test_update_cart_item_amount_no_cart(db_session, sample_user):
     """Тест обновления количества, если у пользователя нет корзины."""

@@ -5,9 +5,9 @@ from fastapi.testclient import TestClient
 from httpx import AsyncClient, ASGITransport
 from starlette import status
 from create_db import get_db_session
-from models import Base, User # Импортируем Base, чтобы Алхимия знала, какие таблицы создавать
+from models import Base, User, Product # Импортируем Base, чтобы Алхимия знала, какие таблицы создавать
 from websocket import manager
-
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.pool import StaticPool
 
@@ -224,3 +224,40 @@ async def ac(db_session):
         yield ac
         
     app.dependency_overrides.clear()
+    
+    
+@pytest.fixture(scope='function')
+async def sample_user(db_session: AsyncSession):
+    """Фикстура для создания тестового пользователя."""
+    stmt = select(User).where(User.username == 'test_user')
+    result = await db_session.execute(stmt)
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        user = User(
+            username='test_user',
+            hashed_password='hashed_password',
+            avatar_url='http://avatar.png',
+            role='user'
+        )
+        db_session.add(user)
+        await db_session.commit()
+        await db_session.refresh(user)
+        
+    return user
+
+
+@pytest.fixture(scope='function')
+async def sample_product(db_session: AsyncSession, sample_user: User):
+    """Фикстура для создания тестового товара."""
+    product = Product(
+        name='test_product',
+        price=1000.0,
+        description = 'test_product',
+        image_url = 'http://example.com/test_product.jpg',
+        owner_username = sample_user.username
+    )
+    db_session.add(product)
+    await db_session.commit()
+    await db_session.refresh(product)
+    return product
