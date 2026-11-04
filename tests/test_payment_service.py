@@ -44,7 +44,7 @@ async def test_create_checkout_stripe_error(mock_stripe_create):
     fake_user = MagicMock()
     fake_user.username = 'test_user'
         
-        # 2. Готовим фейковый товар и кладем его в фейковую корзину
+    # 2. Готовим фейковый товар и кладем его в фейковую корзину
     fake_product = MagicMock()
     fake_product.name = 'test_product'
     fake_product.price = 10.00
