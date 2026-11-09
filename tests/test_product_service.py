@@ -2,6 +2,7 @@ from fastapi import HTTPException
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from services.product_service import ProductService
+import json
 
 @pytest.mark.asyncio
 async def test_get_product_by_id():
@@ -133,5 +134,102 @@ async def test_delete_product_unauthorized():
 
     with pytest.raises(HTTPException) as exc_info:
         await service.delete_product(username='test_name', product_id=fake_product_to_delete['id'], role='user')
+    
+    assert exc_info.value.status_code == 403
+    
+    
+@pytest.mark.asyncio
+async def test_get_products_cache_hit():
+    mock_repo = AsyncMock()
+    mock_redis = AsyncMock()
+    
+    service = ProductService(repository=mock_repo, redis=mock_redis)
+    
+    # Готовим фейковые данные в виде JSON-строки
+    fake_cached_data = json.dumps([{'id': 1, 'name': 'cached_product'}])
+    
+    mock_redis.get.return_value = fake_cached_data
+    
+    result = await service.get_products(username='test_user', limit=5, offset=1)
+    
+    mock_repo.get_all_by_user.assert_not_called()
+    
+    assert result[0]['name'] == 'cached_product'
+    
+@pytest.mark.asyncio
+async def test_get_products_cache_miss():
+    mock_repo = AsyncMock()
+    mock_redis = AsyncMock()
+    
+    service = ProductService(repository=mock_repo, redis=mock_redis)
+    
+    # 1. Set the fake database response
+    fake_db_data = [{'id': 1, 'name': 'fresh'}]
+    mock_repo.get_all_by_user.return_value = fake_db_data
+    
+    # 2. Make Redis return None to simulate an empty cache
+    mock_redis.get.return_value = None
+    
+    # 3. Call the service
+    result = await service.get_products(username='test_user', limit=5, offset=1)
+    
+    # 4. Verify the database was actually called to fetch data
+    mock_repo.get_all_by_user.assert_called_once_with('test_user', 5, 1)
+    
+    # 5. Verify the data was saved to Redis 
+    mock_redis.set.assert_called_once_with(f'products:test_user:5:1', json.dumps(fake_db_data), ex=60) 
+    
+    assert result == fake_db_data
+  
+    
+@pytest.mark.asyncio
+async def test_update_product_success():
+    mock_repo = AsyncMock()
+    mock_bg = MagicMock()
+    mock_manager = AsyncMock()
+    
+    service = ProductService(repository=mock_repo, background_tasks=mock_bg, manager=mock_manager)
+    
+    fake_product_to_update = {'owner_username': 'test_user', 'product_id': 1}
+    mock_repo.get_by_id.return_value = fake_product_to_update
+    mock_repo.update.return_value = fake_product_to_update
+
+    result = await service.update_product(username='test_user', role='admin', product_id=fake_product_to_update['product_id'])
+    
+    assert result == fake_product_to_update
+    
+
+@pytest.mark.asyncio
+async def test_update_product_error():
+    mock_repo = AsyncMock()
+    mock_bg = MagicMock()
+    mock_manager = AsyncMock()
+    
+    service = ProductService(repository=mock_repo, background_tasks=mock_bg, manager=mock_manager)
+    
+    fake_product_to_update = {'owner_username': 'test_user', 'product_id': 1}
+    mock_repo.get_by_id.return_value = None
+    mock_repo.update.return_value = None
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.update_product(username='test_user', role='admin', product_id=fake_product_to_update['product_id'])
+    
+    assert exc_info.value.status_code == 404
+    
+
+@pytest.mark.asyncio
+async def test_update_product_unauthorized():
+    mock_repo = AsyncMock()
+    mock_bg = MagicMock()
+    mock_manager = AsyncMock()
+    
+    service = ProductService(repository=mock_repo, background_tasks=mock_bg, manager=mock_manager)
+    
+    fake_product_to_update = {'owner_username': 'other_user', 'product_id': 1}
+    mock_repo.get_by_id.return_value = fake_product_to_update
+    mock_repo.update.return_value = fake_product_to_update
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.update_product(username='test_user', role='user', product_id=fake_product_to_update['product_id'])
     
     assert exc_info.value.status_code == 403
