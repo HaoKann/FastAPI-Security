@@ -8,7 +8,7 @@ class ProductRepository:
     Класс, который отвечает ТОЛЬКО за работу с базой данных через SQLAlchemy
     """
     def __init__(self, db: AsyncSession):
-        # Теперь принимаем сессию SQLAlchemy, а не пул asyncpg
+        # Теперь принимаем сессию SQLAlchemy, а не пул asyncfpg
         self.db = db
 
     # Вспомогательный метод, чтобы не ломать старый код, ожидающий словари
