@@ -13,19 +13,22 @@ def create_fake_product():
     fake_product.owner.avatar_url = 'http://test_avatar.url'
     return fake_product
 
+def setup_mocks():
+    mock_db = AsyncMock()
+    repo = ProductRepository(db=mock_db)
+    mock_result = MagicMock()
+    mock_db.execute.return_value = mock_result
+    
+    return mock_db, repo, mock_result
 
 @pytest.mark.asyncio
 async def test_get_by_id_success():
-    # 1. Create our fake database session and repository
-    mock_db = AsyncMock()
-    repo = ProductRepository(db=mock_db)
+    mock_db, repo, mock_result = setup_mocks()
     
-    # 2. Create a fake Product object that the database will "find"
+    # Create a fake Product object that the database will "find"
     fake_product = create_fake_product()
     
-    # 3. Create the fake result object that comes back from db.execute()
-    mock_result = MagicMock()
-    mock_db.execute.return_value = mock_result
+    # Create the fake result object that comes back from db.execute()
     mock_result.scalar_one_or_none.return_value = fake_product
     
     # 4. Call the method
@@ -40,9 +43,7 @@ async def test_get_by_id_success():
 @pytest.mark.asyncio
 async def test_get_by_id_not_found():
     
-    mock_db = AsyncMock()
-    repo = ProductRepository(db=mock_db)
-    mock_result = MagicMock()
+    mock_db, repo, mock_result = setup_mocks()    
     
     mock_db.execute.return_value = mock_result
     mock_result.scalar_one_or_none.return_value = None
@@ -54,12 +55,8 @@ async def test_get_by_id_not_found():
     
 @pytest.mark.asyncio
 async def test_get_all_products_success():
-    mock_db = AsyncMock()
-    repo = ProductRepository(db=mock_db)
-    mock_result = MagicMock()
-    
-    mock_db.execute.return_value = mock_result
-    
+    mock_db, repo, mock_result = setup_mocks()
+ 
     fake_product = create_fake_product()
     mock_result.scalars.return_value.all.return_value = [fake_product]
     
@@ -70,11 +67,7 @@ async def test_get_all_products_success():
 
 @pytest.mark.asyncio
 async def test_get_all_products_none():
-    mock_db = AsyncMock()
-    repo = ProductRepository(db=mock_db)
-    mock_result = MagicMock()
-    
-    mock_db.execute.return_value = mock_result
+    mock_db, repo, mock_result = setup_mocks()
     
     mock_result.scalars.return_value.all.return_value = []
     
@@ -85,10 +78,7 @@ async def test_get_all_products_none():
     
 @pytest.mark.asyncio
 async def test_get_all_by_user_success():
-    mock_db = AsyncMock()
-    repo = ProductRepository(db=mock_db)
-    mock_result = MagicMock()
-    mock_db.execute.return_value = mock_result
+    mock_db, repo, mock_result = setup_mocks()
     
     fake_product = create_fake_product()
     mock_result.scalars.return_value.all.return_value = [fake_product]
@@ -100,8 +90,7 @@ async def test_get_all_by_user_success():
     
 @pytest.mark.asyncio
 async def test_delete_success():
-    mock_db = AsyncMock()
-    repo = ProductRepository(db=mock_db)
+    mock_db, repo, mock_result = setup_mocks()
     
     await repo.delete(1)
     
@@ -111,11 +100,8 @@ async def test_delete_success():
 
 @pytest.mark.asyncio
 async def test_create_success():
-    mock_db = AsyncMock()
-    repo = ProductRepository(db=mock_db)
-    mock_result = MagicMock()
-    mock_db.execute.return_value = mock_result
-    
+    mock_db, repo, mock_result = setup_mocks()
+
     fake_product = create_fake_product()
     mock_result.scalar_one_or_none.return_value = 1
     repo.get_by_id = AsyncMock(return_value=fake_product)
@@ -125,3 +111,85 @@ async def test_create_success():
     
     
     assert result.id == 1
+    
+@pytest.mark.asyncio
+async def test_create_none():
+    mock_db, repo, mock_result = setup_mocks()
+
+    fake_product = create_fake_product()
+    mock_result.scalar_one_or_none.return_value = None
+    repo.get_by_id = AsyncMock(return_value=fake_product)
+    
+    result = await repo.create('test_product', 99.9, 'test_owner', 'test_owner')
+    mock_db.commit.assert_awaited_once()
+    
+    assert result is None
+    
+    
+@pytest.mark.asyncio
+async def test_update_successful():
+    mock_db, repo, mock_result = setup_mocks()
+    
+    fake_product = create_fake_product()
+    mock_result.scalar_one_or_none.return_value = 1
+    repo.get_by_id = AsyncMock(return_value=fake_product)
+    
+    result = await repo.update(1, 'new_name', 100.99, 'http://new_image.url')
+    mock_db.commit.assert_awaited_once()
+    
+    assert result == fake_product
+    
+
+    
+@pytest.mark.asyncio
+async def test_update_none():
+    mock_db, repo, mock_result = setup_mocks()
+    
+    fake_product = create_fake_product()
+    mock_result.scalar_one_or_none.return_value = None
+    repo.get_by_id = AsyncMock(return_value=fake_product)
+    
+    result = await repo.update('new_name', 100.99)
+    mock_db.commit.assert_awaited_once()
+    
+    assert result is None
+    
+    
+@pytest.mark.asyncio
+async def test_update_no_data():
+    mock_db, repo, mock_result = setup_mocks()
+    
+    fake_product = create_fake_product()
+    mock_result.scalar_one_or_none.return_value = 1
+    repo.get_by_id = AsyncMock(return_value=fake_product)
+    
+    result = await repo.update(1)
+    
+    assert result == fake_product
+    
+    
+@pytest.mark.asyncio
+async def test_transfer_product_ownership():
+    mock_db, repo, mock_result = setup_mocks()
+    
+    fake_product = create_fake_product()
+    mock_result.scalar_one_or_none.return_value = 1
+    repo.get_by_id = AsyncMock(return_value=fake_product)
+    
+    result = await repo.transfer_product_ownership(1, 'new_name')
+    mock_db.commit.assert_awaited_once()
+    
+    assert result == fake_product 
+    
+@pytest.mark.asyncio
+async def test_transfer_product_ownership_none():
+    mock_db, repo, mock_result = setup_mocks()
+    
+    fake_product = create_fake_product()
+    mock_result.scalar_one_or_none.return_value = None
+    repo.get_by_id = AsyncMock(return_value=fake_product)
+    
+    result = await repo.transfer_product_ownership(1, 'new_name')
+    mock_db.commit.assert_awaited_once()
+    
+    assert result is None 
