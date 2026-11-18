@@ -1,5 +1,10 @@
 from fastapi.testclient import TestClient
 from fastapi import status
+from unittest.mock import AsyncMock
+from models import User
+import auth
+import pytest
+from fastapi import HTTPException
 
 # --- Тесты для эндпоинта /auth/register ---
 def test_register_user_success(client: TestClient):
@@ -112,3 +117,116 @@ def test_login_wrong_password(client: TestClient):
     data = response_login.json()
     assert "access_token" not in data
     assert "detail" in data
+
+
+def test_protected_route_success(client: TestClient):
+    # 1. Register a new user
+    user_data = {'username':'protected_user', 'password':'protected_password'}
+    client.post('/auth/register', json=user_data)
+    
+    # 2. Login to get the token
+    login_response = client.post('/auth/login', data=user_data)
+    access_token = login_response.json()['access_token']
+    
+    
+    # 3. Call the protected route USING the token
+    # 🎯 YOUR TURN: How do you format the headers dictionary?
+    headers = {'Authorization': f'Bearer {access_token}'}
+    
+    response =  client.get('/auth/protected', headers=headers)
+    
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {'message': 'Привет, protected_user! Это защищенная зона'}
+    
+    
+def test_read_users_me_no_avatar(client: TestClient):
+    user_data = {'username':'user_without_avatar', 'password': 'good_password'}
+    client.post('/auth/register', json=user_data)
+    
+    login_response = client.post('/auth/login', data=user_data)
+    access_token = login_response.json()['access_token']
+    
+    headers = {'Authorization': f'Bearer {access_token}'}
+    response = client.get('/auth/me', headers=headers)
+    
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()['avatar_url'] is None
+    
+    
+def test_read_users_me_with_avatar(client: TestClient):
+    # 1. Mock the S3 client so it returns a fake presigned URL
+    auth.s3_client.get_presigned_url = AsyncMock(return_value='https://fake-s3-link.com/temp-avatar')
+    
+    # 2. Create a fake user that already has a base avatar filename
+    fake_user = User(username='avatar_user', avatar_url='avatar.png')
+    
+    # 3. Use the VIP Pass! Override the dependency to return our fake user
+    client.app.dependency_overrides[auth.get_current_user] = lambda: fake_user
+    
+    # 4. Call the route (No headers needed, the VIP pass skips the token check)
+    response = client.get('/auth/me')
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()['avatar_url'] == 'https://fake-s3-link.com/temp-avatar'
+    
+    # 5. Clean up the VIP pass so it doesn't affect other tests
+    client.app.dependency_overrides.clear()
+    
+    
+def test_role_checker_forbidden():
+    # 1. Create the guard (only allows admins)
+    guard = auth.RoleChecker(['admin'])
+    
+    # 2. Create a fake user who is just a regular 'user'
+    hacker_user = User(username='hacker', role='user')
+    
+    # 3. Use pytest.raises to check that the guard blocks them
+    with pytest.raises(HTTPException) as exc_info:
+        guard(hacker_user)
+        
+    
+    # 4. Verify the correct error was thrown
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == 'У вас нет прав для выполнения этого действия'
+    
+    
+def test_role_checker_admin():
+    guard = auth.RoleChecker(['admin'])
+    admin = User(username='admin', role='admin')
+    
+    result = guard(admin)
+        
+    assert result == admin
+    
+    
+def test_protected_route_with_refresh_token_fails(client: TestClient):
+    user_data = {'username':'protected_user', 'password':'protected_password'}
+    client.post('/auth/register', json=user_data)
+    
+    login_response = client.post('/auth/login', data=user_data)
+    refresh_token = login_response.json()['refresh_token']
+    
+    headers = {'Authorization': f'Bearer {refresh_token}'}
+    response = client.get('/auth/protected', headers=headers)
+    
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_protected_route_with_fake_token(client: TestClient):
+    user_data = {'username':'protected_user', 'password':'protected_password'}
+    client.post('/auth/register', json=user_data)
+    
+    client.post('/auth/login', data=user_data)
+    
+    
+    headers = {'Authorization': f'Bearer {'fake_token'}'}
+    response = client.get('/auth/protected', headers=headers)
+    
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    
+    
+@pytest.mark.asyncio
+async def test_get_user_from_db_none():
+    user = 'fake_user'
+    result = await auth.get_user_from_db(db=None, username=user)
+    
+    assert result is None
